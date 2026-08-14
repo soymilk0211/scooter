@@ -1,0 +1,15 @@
+# Normalise line endings: LF in the repository and in the working tree,
+# on every platform. Without this, Windows checkouts get CRLF and diffs
+# churn whenever someone on another OS touches the same file.
+* text=auto eol=lf
+
+# Binary files — never diff, never convert line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
