@@ -1,0 +1,350 @@
+<title>待轉規則審查表</title>
+<style>
+  :root {
+    --ground: #F4F6F3;
+    --surface: #FFFFFF;
+    --ink: #131A16;
+    --muted: #5C6A63;
+    --faint: #8B978F;
+    --line: #DCE2DD;
+    --line-strong: #C2CCC5;
+    --hook: #A85C05;
+    --hook-bg: #F8EEDD;
+    --direct: #126743;
+    --direct-bg: #E4F0E9;
+    --check: #9C3A24;
+    --check-bg: #F8E9E4;
+    --neutral-chip: #EAEEEB;
+    --shadow: 0 1px 2px rgba(19, 26, 22, .06), 0 8px 24px -16px rgba(19, 26, 22, .35);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1210;
+      --surface: #151C18;
+      --ink: #E7EDE9;
+      --muted: #93A199;
+      --faint: #6D7A73;
+      --line: #232C27;
+      --line-strong: #33403A;
+      --hook: #E5A249;
+      --hook-bg: #2A2013;
+      --direct: #5BBF8B;
+      --direct-bg: #12241B;
+      --check: #E0806A;
+      --check-bg: #2B1A15;
+      --neutral-chip: #1E2622;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1210;
+    --surface: #151C18;
+    --ink: #E7EDE9;
+    --muted: #93A199;
+    --faint: #6D7A73;
+    --line: #232C27;
+    --line-strong: #33403A;
+    --hook: #E5A249;
+    --hook-bg: #2A2013;
+    --direct: #5BBF8B;
+    --direct-bg: #12241B;
+    --check: #E0806A;
+    --check-bg: #2B1A15;
+    --neutral-chip: #1E2622;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei",
+                 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 10px; }
+
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-family: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(26px, 4vw, 34px);
+    font-weight: 650;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; color: var(--muted); max-width: 62ch; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* flex 而非 grid：格數不整除欄數時，grid 會在末列留下空的背景色塊，
+     flex 的 grow 則讓每一列都填滿。 */
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 108px;
+  }
+  .stat .n {
+    font-size: 24px; font-weight: 620; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat.is-check .n { color: var(--check); }
+  .stat.is-verified .n { color: var(--direct); }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  .filter {
+    font: inherit; font-size: 13px;
+    padding: 6px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .filter:hover { color: var(--ink); border-color: var(--faint); }
+  .filter[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  .filter:focus-visible { outline: 2px solid var(--check); outline-offset: 2px; }
+
+  section.district { display: flex; flex-direction: column; gap: 10px; }
+  section.district[hidden] { display: none; }
+
+  h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 620;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .sec-count {
+    font-family: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+    font-size: 11px; color: var(--muted);
+    background: var(--neutral-chip);
+    border-radius: 5px; padding: 1px 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sec-flag {
+    font-size: 11px; color: var(--check);
+    background: var(--check-bg);
+    border-radius: 5px; padding: 1px 7px;
+  }
+
+  .scroll {
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+
+  table { border-collapse: collapse; width: 100%; min-width: 780px; }
+
+  th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .06em;
+    color: var(--faint);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  tr[hidden] { display: none; }
+
+  .th-glyph, .c-glyph { width: 40px; padding-right: 0; }
+  .glyph { width: 22px; height: 22px; display: block; }
+  .c-glyph.hook { color: var(--hook); }
+  .c-glyph.direct { color: var(--direct); }
+  .c-glyph.lane-rule { color: var(--muted); }
+
+  .c-roads { min-width: 230px; }
+  .entry { font-weight: 560; }
+  .exit { font-weight: 560; }
+  .arrow { color: var(--faint); margin: 0 7px; font-size: 13px; }
+
+  .c-head {
+    font-size: 13px; color: var(--ink); white-space: nowrap; font-weight: 560;
+  }
+  .c-head .sep { color: var(--faint); margin: 0 5px; font-weight: 400; }
+
+  /* 原始標示的第一個字是「從哪來」，與騎士面向必然相反 —— 放在旁邊對照，
+     但視覺上壓低，避免與我們自己的欄位混淆。 */
+  .c-raw {
+    font-size: 12px; color: var(--faint); white-space: nowrap;
+  }
+
+  .c-num {
+    text-align: right;
+    font-family: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .badge, .chip {
+    display: inline-block;
+    font-size: 12px;
+    padding: 2px 9px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .badge.hook { background: var(--hook-bg); color: var(--hook); font-weight: 560; }
+  .badge.direct { background: var(--direct-bg); color: var(--direct); }
+  .badge.lane-rule { background: var(--neutral-chip); color: var(--muted); }
+
+  .chip.auto { background: var(--neutral-chip); color: var(--muted); }
+  .chip.lane { background: var(--neutral-chip); color: var(--faint); }
+  .chip.check { background: var(--check-bg); color: var(--check); font-weight: 560; }
+  .chip.verified { background: var(--direct-bg); color: var(--direct); font-weight: 560; }
+
+  .note {
+    color: var(--muted);
+    font-size: 13px;
+    border-left: 2px solid var(--line-strong);
+    padding-left: 14px;
+    max-width: 66ch;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .note b { color: var(--ink); font-weight: 600; }
+
+  .sr {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 4px 0; }
+  .empty[hidden] { display: none; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">臺北市 · 機車例外管制路口</div>
+    <h1>待轉規則審查表</h1>
+    <p class="lede">
+      種子資料庫的 <strong>{{total}} 筆規則</strong>，涵蓋 {{districts}} 個行政區。
+      要看的是一件事：<strong>進入道路與離開道路的順序對不對</strong>。
+      左邊的箭頭畫的是實際行進方向與左轉後的去向 —— 箭頭朝向應該符合你對那個路口的印象。
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><span class="n">{{total}}</span><span class="k">規則總數</span></div>
+    <div class="stat is-verified"><span class="n">{{verified}}</span><span class="k">已實地確認</span></div>
+    <div class="stat is-check"><span class="n">{{check}}</span><span class="k">需人工確認順序</span></div>
+    <div class="stat"><span class="n">{{auto}}</span><span class="k">依道路走向判定</span></div>
+    <div class="stat"><span class="n">{{lane}}</span><span class="k">同路名巷弄</span></div>
+    <div class="stat"><span class="n">{{hook}}</span><span class="k">待轉</span></div>
+    <div class="stat"><span class="n">{{direct}}</span><span class="k">直接左轉</span></div>
+  </div>
+
+  <div class="note">
+    <span><b>順序判定是怎麼來的。</b>原始資料的「路口」欄只寫哪兩條路相交，沒說騎士從哪條來。
+    程式比對兩條路在路口的走向，與進入方位角同軸的那條就是進入道路。兩條路在路口幾乎平行時
+    無法分辨，會退回原始順序。</span>
+    <span><b>錯了會怎樣。</b>路名只用於顯示，不參與規則比對（ADR-0001），所以順序錯不影響警示正確性
+    ——只是回報畫面上的路名會左右顛倒。</span>
+    <span><b>「騎士面向」與「原始標示」為什麼對不起來。</b>兩者的第一個字必然相反：原始資料的
+    「北往東」指<b>從北邊過來</b>，車頭因此朝南，所以我們記為「南 → 東」。對向值（如「南往北」）
+    在原始資料裡只標示車道走向，我們則直接記成左轉後的實際去向。儲存的是騎士面向，因為那才是
+    GPS 給的、拿來比對規則的值。</span>
+  </div>
+
+  <div class="filters">
+    <button class="filter" data-filter="all" aria-pressed="true">全部</button>
+    <button class="filter" data-filter="check" aria-pressed="false">只看待確認</button>
+    <button class="filter" data-filter="verified" aria-pressed="false">只看已實地確認</button>
+    <button class="filter" data-filter="lane" aria-pressed="false">只看左轉專用道</button>
+    <button class="filter" data-filter="hook" aria-pressed="false">只看待轉</button>
+    <button class="filter" data-filter="direct" aria-pressed="false">只看直接左轉</button>
+  </div>
+
+  <p class="empty" hidden>此篩選條件下沒有規則。</p>
+
+  {{sections}}
+</div>
+
+<script>
+  (function () {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('.filter'));
+    var rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr'));
+    var sections = Array.prototype.slice.call(document.querySelectorAll('section.district'));
+    var empty = document.querySelector('.empty');
+
+    function matches(row, mode) {
+      if (mode === 'all') return true;
+      if (mode === 'check') return row.dataset.order === 'check';
+      if (mode === 'verified') return row.dataset.order === 'verified';
+      if (mode === 'hook') return row.dataset.rule === '1';
+      if (mode === 'direct') return row.dataset.rule === '2';
+      if (mode === 'lane') return row.dataset.rule === '3' || row.dataset.rule === '4';
+      return true;
+    }
+
+    function apply(mode) {
+      var shown = 0;
+      rows.forEach(function (row) {
+        var ok = matches(row, mode);
+        row.hidden = !ok;
+        if (ok) shown++;
+      });
+      sections.forEach(function (section) {
+        var any = Array.prototype.some.call(
+          section.querySelectorAll('tbody tr'), function (r) { return !r.hidden; });
+        section.hidden = !any;
+      });
+      empty.hidden = shown !== 0;
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.filter === mode));
+      });
+    }
+
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { apply(b.dataset.filter); });
+    });
+  })();
+</script>

@@ -1,0 +1,199 @@
+{
+  "_comment": [
+    "實地查核結果。這裡的內容是權威的，會蓋過管線自動推導的結果。",
+    "",
+    "存在的理由：自動地理編碼與臂判定是啟發式的，改一個門檻就會牽動幾十筆，",
+    "而且無法自我驗證。騎士到現場看牌子得到的是事實，不該每次重跑管線就被沖掉。",
+    "",
+    "match 用『面向角度』定位規則（0=北 90=東 180=南 270=西），",
+    "因為路名正是最常出錯的欄位，拿它當鍵會自我矛盾。",
+    "",
+    "turn_rule: 1=待轉 2=直接左轉 3=內側專用道 4=外側專用道 0=中性播報",
+    "exists: false 代表該方向根本沒有左轉動線，規則應刪除。"
+  ],
+  "checks": [
+    {
+      "junction_text": "成功路四段與金龍路口",
+      "checked_on": "2026-08-15",
+      "source": "街景 + 騎士回報",
+      "note": "路名已確認：北側金湖路、南側金龍路。規定有標誌落差 —— 官方清冊列為免待轉，現場待轉牌卻還沒拆。依標誌落差處理原則播報待轉：待轉在任何情況下都不違法，而照官方資料播直接左轉會讓騎士違反現場仍然有效的待轉牌。",
+      "recheck": {
+        "reason": "待轉牌可能隨時拆除。牌子一拆，此路口即回歸官方資料的免待轉（turn_rule 2）。",
+        "revert_to_turn_rule": 2,
+        "evidence_must_be_after": "2026-08-15",
+        "note": "只有拍攝日期晚於本次查核的影像才算數 —— 舊照片沒有牌子，可能是牌子當時還沒裝，不是拆了。"
+      },
+      "rules": [
+        {
+          "approach_bearing": 90,
+          "exit_road_name": "金湖路",
+          "turn_rule": 1
+        },
+        {
+          "approach_bearing": 270,
+          "exit_road_name": "金龍路",
+          "turn_rule": 1
+        }
+      ]
+    },
+    {
+      "junction_text": "水源路與師大路",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報",
+      "note": "只有師大路可左轉進水源路；水源路無左轉進師大路的動線。進出路名原本顛倒。",
+      "rules": [
+        {
+          "approach_bearing": 0,
+          "entry_road_name": "師大路",
+          "exit_road_name": "水源路",
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "延平北路6段、環河北路3段與社中街",
+      "checked_on": "2026-08-15",
+      "source": "街景 + 騎士回報",
+      "note": "三項修正。(1) 進入道路是延平北路六段，不是環河北路 —— CSV 把兩條路寫在一起，只有延平北路那條適用。(2) 現場為外側左轉專用道（藍底標誌，機車與自行車共用），不是單純直接左轉。(3) 環河北路禁行機車（紅牌：往延平北路六段511巷除外），所以環河北路那一組配對對機車不成立。",
+      "rules": [
+        {
+          "approach_bearing": 180,
+          "entry_road_name": "延平北路六段",
+          "exit_road_name": "社中街",
+          "turn_rule": 4
+        }
+      ]
+    },
+    {
+      "junction_text": "水源路與泉州街",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報 + 地圖",
+      "note": "官方清冊寫的動線不存在：水源路是單行道，不會通往泉州街。實際可左轉進泉州街的是中華路二段，面向東、左轉朝北。原規則撤下，正確的那條以 add 補上。",
+      "rules": [
+        { "approach_bearing": 270, "exists": false },
+        {
+          "add": true,
+          "approach_bearing": 90,
+          "exit_bearing": 0,
+          "entry_road_name": "中華路二段",
+          "exit_road_name": "泉州街",
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "市府路與松壽路",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報 + 街景",
+      "note": "面向北左轉朝西免待轉（官方資料正確）；面向南左轉朝東仍須待轉。同一路口不同來向規定不同 —— 現場的待轉區方框是給面向南那側用的，判讀影像時若不區分來向就會把免待轉的那側也判成待轉。",
+      "rules": [
+        {
+          "approach_bearing": 0,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "塔悠路與松信路",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報",
+      "note": "確認無誤。離開道路經幾何判定修正為八德路四段（原始清冊寫松信路）。",
+      "rules": [
+        {
+          "approach_bearing": 180,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "塔悠路與南京東路5段",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報",
+      "note": "確認無誤。",
+      "rules": [
+        {
+          "approach_bearing": 180,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "環河南路與武昌街",
+      "checked_on": "2026-08-15",
+      "source": "街景（現場圓形藍底兩段式左轉標誌）+ 騎士回報",
+      "note": "規定確認為待轉，段號補正為環河南路一段與武昌街二段。此路口的標誌是圓形藍底、機車圖案配左箭頭與直行箭頭 —— 那兩個箭頭畫的是『先直行、再左轉』兩個階段，代表待轉，不是可直接左轉。",
+      "rules": [
+        {
+          "approach_bearing": 0,
+          "entry_road_name": "環河南路一段",
+          "exit_road_name": "武昌街二段",
+          "turn_rule": 1
+        }
+      ]
+    },
+    {
+      "junction_text": "瑞光路與陽光街口",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報",
+      "note": "待轉牌已拆除，現場與官方資料一致，無標誌落差。與成功路四段恰好相反 —— 那裡牌子還沒跟上資料。",
+      "rules": [
+        {
+          "approach_bearing": 0,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "中山北路5段與福國路",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報",
+      "note": "確認無誤，未變更。",
+      "rules": [
+        {
+          "approach_bearing": 0,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "承德路與市民大道",
+      "checked_on": "2026-08-15",
+      "source": "街景（現場有「機車免二段左轉」標誌）+ 騎士回報",
+      "note": "確認無誤，未變更。",
+      "rules": [
+        {
+          "approach_bearing": 180,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "康寧路3段與康寧路3段75巷",
+      "checked_on": "2026-08-15",
+      "source": "騎士回報",
+      "note": "確認無誤，未變更。",
+      "rules": [
+        {
+          "approach_bearing": 180,
+          "turn_rule": 2
+        }
+      ]
+    }
+  ],
+  "_restricted_comment": [
+    "實地確認的機車禁行路段。目前僅記錄，尚未有對應資料表 —— 等 Valhalla 路線",
+    "整合進 App 時，這裡會成為 ADR-0006 所要求的排除清單來源之一。",
+    "OSM 的 motorcycle 標籤不可信（復北地下道被標成 motorcycle=yes），所以人工",
+    "確認的紀錄比自動判定更有價值。"
+  ],
+  "restricted_roads": [
+    {
+      "road_name": "環河北路",
+      "section": "三段",
+      "checked_on": "2026-08-15",
+      "source": "現場紅底標誌",
+      "sign_text": "環河北路禁行機車，往延平北路六段511巷除外",
+      "exception": "往延平北路六段511巷"
+    }
+  ]
+}
