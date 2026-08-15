@@ -57,6 +57,7 @@ import tw.scooter.ui.TopReportBar
 import tw.scooter.ui.VoiceWarning
 import tw.scooter.ui.theme.AppearanceMode
 import tw.scooter.ui.theme.ScooterTheme
+import tw.scooter.ui.theme.resolvesToDark
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,7 +141,7 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
             },
         ) {
             Box(Modifier.fillMaxSize()) {
-                MapCanvas(Modifier.fillMaxSize())
+                MapCanvas(Modifier.fillMaxSize(), dark = appearance.resolvesToDark())
 
                 // 用 Column 讓選單按鈕自然排在回報列下方。先前用固定位移量去猜
                 // 回報列的高度，結果兩者疊在一起 —— 版面高度該由版面決定，不該手算。

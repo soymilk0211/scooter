@@ -3,7 +3,11 @@ package tw.scooter.ui
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -13,35 +17,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-
-/**
- * 開發階段的暫用底圖樣式。
- *
- * **不可上線。** OSM 官方圖磚伺服器的使用條款禁止一般應用程式取用，這裡只是為了
- * 在真機／模擬器上驗證算圖管線 —— MapLibre 的 demotiles 只有世界地圖等級的資料
- * （約 zoom 5 以下），在台北的騎乘縮放層級一片空白，看不出算圖到底有沒有動。
- *
- * 正式版需換成自有或商用向量圖磚，並改回深色配色。
- */
-private const val DEV_STYLE_JSON = """
-{
-  "version": 8,
-  "sources": {
-    "osm": {
-      "type": "raster",
-      "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      "tileSize": 256,
-      "attribution": "© OpenStreetMap contributors"
-    }
-  },
-  "layers": [
-    { "id": "bg", "type": "background", "paint": { "background-color": "#101512" } },
-    { "id": "osm", "type": "raster", "source": "osm" }
-  ]
-}
-"""
 
 private const val TAG = "MapCanvas"
 
@@ -53,36 +31,48 @@ private const val TAG = "MapCanvas"
 @Composable
 fun MapCanvas(
     modifier: Modifier = Modifier,
+    dark: Boolean = true,
     startLat: Double = 25.0330,
     startLon: Double = 121.5654,
     zoom: Double = 15.0,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var map by remember { mutableStateOf<MapLibreMap?>(null) }
 
     val mapView = remember {
         MapLibre.getInstance(context)
         MapView(context).apply {
             onCreate(null)
-            getMapAsync { map ->
-                map.setStyle(Style.Builder().fromJson(DEV_STYLE_JSON)) { style ->
-                    Log.i(TAG, "style loaded, layers=${style.layers.size}")
-                }
-                map.cameraPosition = CameraPosition.Builder()
+            getMapAsync { ready ->
+                // 樣式不在這裡設。它會隨外觀模式改變，交給下面的 LaunchedEffect
+                // 統一負責，才不會有兩個地方各自設一次而互相蓋掉。
+                map = ready
+                ready.cameraPosition = CameraPosition.Builder()
                     .target(LatLng(startLat, startLon))
                     .zoom(zoom)
                     .build()
-                map.uiSettings.isAttributionEnabled = true
-                map.uiSettings.isLogoEnabled = false
+                // 屬名是圖磚來源的授權條款要求，不能關。
+                ready.uiSettings.isAttributionEnabled = true
+                ready.uiSettings.isLogoEnabled = false
                 // 騎乘中不需要轉動地圖，關掉可避免誤觸把方向轉歪。
-                map.uiSettings.isRotateGesturesEnabled = false
-                map.uiSettings.isTiltGesturesEnabled = false
+                ready.uiSettings.isRotateGesturesEnabled = false
+                ready.uiSettings.isTiltGesturesEnabled = false
                 // 拖曳平移、滾輪與雙指縮放、雙擊放大 —— 桌面上滑鼠滾輪會對應到縮放。
-                map.uiSettings.isScrollGesturesEnabled = true
-                map.uiSettings.isZoomGesturesEnabled = true
-                map.uiSettings.isDoubleTapGesturesEnabled = true
-                map.uiSettings.isQuickZoomGesturesEnabled = true
+                ready.uiSettings.isScrollGesturesEnabled = true
+                ready.uiSettings.isZoomGesturesEnabled = true
+                ready.uiSettings.isDoubleTapGesturesEnabled = true
+                ready.uiSettings.isQuickZoomGesturesEnabled = true
             }
+        }
+    }
+
+    // 外觀一改就換一次皮。深淺兩版的路網幾何完全相同，所以換皮時地圖不會跳動，
+    // 只有顏色淡入 —— 樣式裡的 raster-fade-duration 就是為了這 180 毫秒。
+    LaunchedEffect(map, dark) {
+        val target = map ?: return@LaunchedEffect
+        target.setStyle(Style.Builder().fromJson(MapStyle.json(dark))) { style ->
+            Log.i(TAG, "style loaded dark=$dark layers=${style.layers.size}")
         }
     }
 

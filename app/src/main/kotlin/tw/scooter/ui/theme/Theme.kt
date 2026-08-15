@@ -34,8 +34,13 @@ object ScooterColors {
     val AlarmFace = Color(0xFF7A1710)    // 警告面上的按鈕，仍在紅色系內
     val OnAlarm = Color(0xFFFFFFFF)
 
+    // 淺色模式的面必須比底圖**暗**。極簡淺色底圖的地表接近純白，先前 #F2F2F5 的卡片
+    // 疊上去等於消失；而卡片與按鈕原本同一個色，回報按鈕在淺色下也分不出鎖定與否。
+    // 這裡沿用深色的邏輯 —— 浮起的面比底下的面亮一階。
     val LightInk = Color(0xFFFFFFFF)
-    val LightSurface = Color(0xFFF2F2F5)
+    val LightSurface = Color(0xFFE8E8EC)       // 卡片面，也是按鈕鎖定時的面
+    val LightSurfaceRaised = Color(0xFFFFFFFF) // 可按的按鈕面
+    val LightLine = Color(0xFFD0D0D6)
     val LightText = Color(0xFF101012)
     val LightTextMuted = Color(0xFF6C6C70)
 }
@@ -55,13 +60,13 @@ private val Dark = darkColorScheme(
 private val Light = lightColorScheme(
     background = ScooterColors.LightInk,
     surface = ScooterColors.LightSurface,
-    surfaceVariant = ScooterColors.LightSurface,
+    surfaceVariant = ScooterColors.LightSurfaceRaised,
     onBackground = ScooterColors.LightText,
     onSurface = ScooterColors.LightText,
     onSurfaceVariant = ScooterColors.LightTextMuted,
     primary = ScooterColors.Amber,
     onPrimary = ScooterColors.LightInk,
-    outline = Color(0xFFD8D8DC),
+    outline = ScooterColors.LightLine,
 )
 
 private val ScooterTypography = Typography(
@@ -73,16 +78,25 @@ private val ScooterTypography = Typography(
 
 enum class AppearanceMode { SYSTEM, DARK, LIGHT }
 
+/**
+ * 這個外觀模式最終是深色還是淺色。
+ *
+ * 獨立出來是因為底圖也要問同一個問題 —— 地圖的皮如果自己算一次「現在是不是深色」，
+ * 遲早會跟介面的答案不一致，而半深半淺的畫面比兩者都錯還難看。
+ */
+@Composable
+fun AppearanceMode.resolvesToDark(): Boolean = when (this) {
+    AppearanceMode.SYSTEM -> isSystemInDarkTheme()
+    AppearanceMode.DARK -> true
+    AppearanceMode.LIGHT -> false
+}
+
 @Composable
 fun ScooterTheme(
     mode: AppearanceMode = AppearanceMode.DARK,
     content: @Composable () -> Unit,
 ) {
-    val dark = when (mode) {
-        AppearanceMode.SYSTEM -> isSystemInDarkTheme()
-        AppearanceMode.DARK -> true
-        AppearanceMode.LIGHT -> false
-    }
+    val dark = mode.resolvesToDark()
     MaterialTheme(
         colorScheme = if (dark) Dark else Light,
         typography = ScooterTypography,

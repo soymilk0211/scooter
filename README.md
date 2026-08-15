@@ -44,14 +44,17 @@ SQLite 結構與種子資料庫、定位前景服務、主畫面（深色地圖 
 **已驗證的假設**：台灣 Valhalla 圖磚 309 MB（ADR-0003）；`motor_scooter` costing
 確實避開國道（ADR-0006）。
 
-**未接上**：語音、懸浮視窗、Valhalla 與 App 的整合、資料同步、後端、被動觀察偵測。
+**未接上**：懸浮視窗、Valhalla 與 App 的整合、資料同步、後端、被動觀察偵測。
 
 ## 已知待辦
 
-- 地圖目前指向 MapLibre 公開示範樣式，僅供渲染驗證，正式版需換圖磚來源。
+- 底圖借用 CARTO 的公開端點（Positron／Dark Matter），免費但有使用條款，商用需方案。
+  正式版要換成自有或商用**向量**圖磚 —— 換的時候只動 `app/.../ui/MapStyle.kt`。
 - 32 個路口無法自動定位，需人工補座標 —— 見 `pipeline/build/review_coords.csv`。
 - 被動偵測待轉的演算法尚未以真實軌跡驗證，是目前風險最高的假設（[ADR-0005](docs/adr/0005-passive-observation-with-asymmetric-weighting.md)）。
-- **尚未在實機或模擬器上執行過。** 目前只驗證了編譯與單元測試。
+- **最新的介面（語音失效警告、新底圖與淺色模式）沒有在任何裝置上看過**，
+  這台機器的模擬器開機到一半就凍結（見 [HANDOVER.md](HANDOVER.md) 第一節）。
+  目前只驗證了編譯與單元測試。
 
 ## 免責
 
