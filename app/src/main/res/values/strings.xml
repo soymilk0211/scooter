@@ -27,6 +27,22 @@
     <string name="service_channel">騎乘中</string>
     <string name="service_title">待轉警示執行中</string>
     <string name="service_text">接近路口時會語音提醒</string>
+    <string name="service_title_silent">警示發不出聲音</string>
+    <string name="service_text_silent">路口不會有語音提醒，請開啟 App 處理</string>
+    <string name="service_text_degraded">語音會延遲約三秒，請開啟 App 處理</string>
+
+    <string name="voice_alarm_silent_title">路口不會出聲</string>
+    <string name="voice_alarm_degraded_title">語音會慢一拍</string>
+    <string name="voice_alarm_missing_data">這台裝置沒有中文語音資料。規則照樣判定，但接近路口時你不會聽到任何提醒。</string>
+    <string name="voice_alarm_no_engine">這台裝置沒有可用的語音引擎。規則照樣判定，但接近路口時你不會聽到任何提醒。</string>
+    <string name="voice_alarm_silenced">媒體音量是 0。警示會照常播出，但你聽不到。</string>
+    <string name="voice_alarm_degraded">語音檔沒有預先備妥，播報要等引擎現場合成，約慢三秒 —— 路口可能已經過了。</string>
+
+    <string name="voice_remedy_install">下載語音</string>
+    <string name="voice_remedy_settings">語音設定</string>
+    <string name="voice_remedy_volume">調高音量</string>
+    <string name="voice_remedy_recheck">重新檢查</string>
+    <string name="voice_remedy_dismiss">知道了</string>
 
     <string name="permission_needed">需要定位權限才能提醒路口規則</string>
     <string name="permission_grant">開啟權限</string>

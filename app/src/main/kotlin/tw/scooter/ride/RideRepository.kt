@@ -32,9 +32,12 @@ object RideRepository {
     private val _alert = MutableStateFlow<AlertCandidate?>(null)
     val alert: StateFlow<AlertCandidate?> = _alert.asStateFlow()
 
-    /** 語音是否可用。false 代表裝置缺少 zh-TW 語音資料，騎士會完全聽不到警示。 */
-    private val _voiceReady = MutableStateFlow<Boolean?>(null)
-    val voiceReady: StateFlow<Boolean?> = _voiceReady.asStateFlow()
+    /**
+     * 語音警示的可用狀態。這是本 App 唯一一個「壞掉時看不出來」的環節 ——
+     * 其餘失效（沒定位、服務沒跑）畫面上都有跡象，只有聽不到沒有。
+     */
+    private val _voiceStatus = MutableStateFlow(VoiceStatus.CHECKING)
+    val voiceStatus: StateFlow<VoiceStatus> = _voiceStatus.asStateFlow()
 
     /** 設定頁的「背景音量衰減」。放在這裡是因為服務與 UI 各自存活，
      *  誰都不該持有對方。 */
@@ -45,8 +48,8 @@ object RideRepository {
         _duckOthers.value = enabled
     }
 
-    fun onVoiceReady(ok: Boolean) {
-        _voiceReady.value = ok
+    fun onVoiceStatus(status: VoiceStatus) {
+        _voiceStatus.value = status
     }
 
     fun onAlert(candidate: AlertCandidate?) {
@@ -110,6 +113,11 @@ object RideRepository {
 
     fun onServiceStateChanged(running: Boolean) {
         _serviceRunning.value = running
-        if (!running) buffer.clear()
+        if (!running) {
+            buffer.clear()
+            // 服務停了就沒人在檢查語音了，先前的結論隨即過期。留著它會讓騎士
+            // 看到一則沒有東西在維護的警告，或更糟 —— 一則早就不成立的安心。
+            _voiceStatus.value = VoiceStatus.CHECKING
+        }
     }
 }

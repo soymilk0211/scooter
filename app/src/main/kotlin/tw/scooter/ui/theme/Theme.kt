@@ -28,6 +28,12 @@ object ScooterColors {
     val Amber = Color(0xFFFFB020)        // 待轉／需要注意
     val Green = Color(0xFF32D74B)        // 可直接左轉
 
+    // 第四種顏色職責，僅供一件事使用：**這台裝置現在保護不了你**。
+    // 用滿版填色而非邊框或圖示，因為它必須在陽光下用眼角餘光就看得到。
+    val Alarm = Color(0xFFFF453A)
+    val AlarmFace = Color(0xFF7A1710)    // 警告面上的按鈕，仍在紅色系內
+    val OnAlarm = Color(0xFFFFFFFF)
+
     val LightInk = Color(0xFFFFFFFF)
     val LightSurface = Color(0xFFF2F2F5)
     val LightText = Color(0xFF101012)

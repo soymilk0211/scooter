@@ -28,6 +28,30 @@ JAVA_HOME=/c/Users/user/Android/jdk/jdk-21.0.12+8 ANDROID_HOME=C:/Users/user/And
 
 **踩過的坑**：`adb shell` 的輸出在 Git Bash 裡會遺失，用 PowerShell 呼叫 `adb.exe` 才收得到。模擬器啟動後若沒正常關閉，`qemu-system-x86_64-headless` 會殘留並霸佔 `emulator-5554`，導致新開的模擬器連不上 —— 症狀是 `adb devices` 看得到裝置但 `getprop` 永遠沒回應。
 
+**2026-08-15：模擬器完全開不起來，而且不是上面那個殘留問題。** 開始前 5554 是乾淨的。
+
+症狀（每一次都一樣）：`adb devices` 看得到裝置，但 `adb shell` 與 `adb logcat` 永遠不回應，
+而 **qemu 行程的 CPU 時間完全靜止**（15–20 秒內 delta 為 0），駐留記憶體 1.6 GB ——
+是凍結，不是開機慢。凍結前累積的 CPU 時間每次不同（23 / 30 / 67 / 259 秒），所以是開到一半才卡。
+
+**已排除的假設**：
+
+| 假設 | 怎麼試的 | 結果 |
+| --- | --- | --- |
+| 快照或開機模式 | 快照載入、`-no-snapshot-load`、`-no-snapshot` | 三種都凍結 |
+| GPU | 加 `-gpu swiftshader_indirect` | 仍凍結 |
+| Hyper-V／WSL2 搶 WHPX | `docker desktop stop` + `wsl --shutdown`，確認 `vmmem` 消失後再開 | **仍凍結**（Docker 當時零容器） |
+| AVD 影像被硬砍壞掉 | 用 `avdmanager` 另建全新 AVD（android-34 google_apis x86_64）開機 | **仍凍結**（跑最遠的一次，259 秒 CPU） |
+| 磁碟或記憶體不足 | C 槽剩 48 GB、實體記憶體剩 17 GB | 不是 |
+
+**沒排除的**：emulator 37.1.11 對上 Windows 11 build **26200**（Insider 線）。`-accel-check` 回報
+`WHPX(10.0.26200) is installed and usable`；VBS 狀態為 running，但 HVCI 與 Credential Guard
+都沒開（`SecurityServicesRunning: 0`），這是裝了 Hyper-V 後的正常狀態，不像是元凶。
+下一步該試的是**換 emulator 版本**（升級或退到 35.x），而不是繼續動系統設定。
+
+這台機器上 adb 呼叫一定要用 `Start-Job` + `Wait-Job -Timeout` 包起來，否則卡住的 `adb shell`
+會把整個工作階段拖死。`$env:LOCALAPPDATA\Temp\AndroidEmulator\` 下有 `emu-crash-*.db` 可查。
+
 祕密放在 `pipeline/.env`（已 gitignore）：`MAPILLARY_TOKEN`、`CGU_API_KEY`。
 
 ---
@@ -40,18 +64,51 @@ JAVA_HOME=/c/Users/user/Android/jdk/jdk-21.0.12+8 ANDROID_HOME=C:/Users/user/And
 - 定位前景服務（`location` + `mediaPlayback`）
 - **警示引擎**：距離 300 m、方位角 ±30°、速度 > 15 km/h、生效時段、5 分鐘冷卻、依剩餘時間排序取唯一一則
 - **語音**：首次啟動預合成五句話成 wav，播報時放本機檔（即時 TTS 首句延遲實測 2.8–3.6 秒，路口等不起）；`USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`
+- **語音失效警告**（2026-08-15 完成，**尚未在裝置上跑過**，見下節）
 - 種子資料庫內附於 APK，首次啟動複製到可寫位置
 
-**19 項單元測試全綠**，`./gradlew build` 通過，APK 53 MB。
+**32 項單元測試全綠**（core-rules 19、app 13），`./gradlew build` 通過，APK 53 MB。
 
 **尚未實作**：
 
 - **懸浮視窗**（`SYSTEM_ALERT_WINDOW`）—— 騎士切到 Google Maps 後唯一的視覺通道，這是下一件該做的
-- 「語音不可用」的警告畫面 —— `RideRepository.voiceReady` 已有狀態但沒顯示。**部分無 GMS 的 ROM 沒有 zh-TW 語音資料，騎士會完全聽不到警示而毫無察覺**，這是目前最危險的缺口
 - Valhalla 與 App 的整合（圖磚已驗證 309 MB，但還沒放進 App）
 - 資料同步（diff 發布）、後端、被動觀察偵測、騎乘前檢查（ROM 背景清殺偵測）
 
 **從未在真機上跑過。** 使用者只有 iPhone，正在找二手 Android。模擬器驗證不了 GPS 精度、廠牌 ROM 清殺、太陽下的過熱。
+
+### 語音失效警告（2026-08-15）
+
+原本 `voiceReady` 只是一個沒人讀的 Boolean。現在改成 `VoiceStatus`，因為**補救動作各不相同**，
+而一個只會說「語音不可用」的畫面，是把問題丟給一個站在路邊、戴著安全帽、正要出發的人。
+
+| 狀態 | 意義 | 給騎士的按鈕 |
+| --- | --- | --- |
+| `CHECKING` | 還沒有結論 | 不顯示任何東西 |
+| `READY` | 五個 wav 都在 | — |
+| `DEGRADED` | 引擎正常但預合成失敗，退回即時 TTS（慢約 3 秒） | 重新檢查／知道了 |
+| `SILENCED` | 引擎正常但**媒體音量為 0** | 調高音量 |
+| `MISSING_DATA` | 沒有 zh-TW 語音資料 | 下載語音／語音設定／重新檢查 |
+| `NO_ENGINE` | 沒有可用的 TTS 引擎 | 語音設定／重新檢查 |
+
+設計上的幾個決定：
+
+- **`SILENCED` 是我加的，超出原本的交接範圍。** 媒體音量為 0 的症狀與缺語音資料一模一樣
+  （`USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` 走 `STREAM_MUSIC`），而它遠比缺語音資料常見。
+  不同意的話刪掉 `VoiceStatus.SILENCED` 與 `mediaSilent()` 即可，其餘不受影響。
+- **致命的三種沒有關閉鍵**。能被關掉的警告，和一開始就沒有的警告，對騎士來說沒有差別。
+  只有 `DEGRADED`（聽得到，只是慢）可以按「知道了」，而且只對當前這個狀態有效。
+- **引擎問題優先於音量**。兩者同時壞掉時叫騎士去轉大聲，他轉完仍然聽不到，卻會以為修好了。
+- **合成有 15 秒 watchdog**。有些引擎失敗時 `onDone` 與 `onError` 都不給；停在 `CHECKING`
+  等於這套警告機制自己也靜默失效。
+- **每一輪檢查帶一個 generation 號碼**。沒有它的話，連按兩次「重新檢查」時，第一顆引擎
+  （正常）的回呼可能晚於第二顆（壞掉）抵達，把狀態蓋回 `READY` —— 正好是要防的那件事。
+- 常駐通知會跟著變（紅色、改標題）。這是騎士切到 Google Maps 後唯一還能改變的畫面，
+  但頻道是 `IMPORTANCE_LOW` 不會彈出來 —— **真正的答案還是懸浮視窗**。
+
+**尚未在裝置上驗證**：模擬器這台機器目前開不起來（見第一節）。程式邏輯有 13 個單元測試蓋著，
+但「紅色警告列長什麼樣、會不會跟回報列疊在一起、下載語音的 Intent 在真機上開不開得起來」
+這三件事完全沒被驗證過。裝置一到手，第一件事就是這個。
 
 ### 測試回放
 
@@ -136,12 +193,14 @@ cp build/scooter_seed.db ../app/src/main/assets/
 
 ## 七、待決事項
 
-1. **懸浮視窗**要不要現在做（下一步的預設選項）
-2. **語音不可用的警告畫面** —— 我認為優先於懸浮視窗，因為它是安靜的失效
-3. 街景判讀要不要改成每週矛盾偵測，還是整個擱置
-4. 19 個待補座標的路口要人工處理（`pipeline/build/review_coords.csv`）
-5. 實地查核清單還有 30 餘筆高優先（`pipeline/build/ride_check.csv`，按風險排序：說「直接左轉」而現場要待轉會吃罰單）
-6. Play Console：新個人帳號需 **12 位測試者連續 14 天**才能上架，那 12 人必須是 Android 使用者
+1. **懸浮視窗**要不要現在做（下一步的預設選項；語音警告做完後，它是最後一個視覺缺口）
+2. ~~語音不可用的警告畫面~~ —— 2026-08-15 完成，但**還沒在任何裝置上看過**
+3. **模擬器凍結**（見第一節，已排除五個假設）。在它修好之前，任何 UI 改動都只有單元測試蓋得到 ——
+   下一步建議換 emulator 版本試，別再動系統設定
+4. 街景判讀要不要改成每週矛盾偵測，還是整個擱置
+5. 19 個待補座標的路口要人工處理（`pipeline/build/review_coords.csv`）
+6. 實地查核清單還有 30 餘筆高優先（`pipeline/build/ride_check.csv`，按風險排序：說「直接左轉」而現場要待轉會吃罰單）
+7. Play Console：新個人帳號需 **12 位測試者連續 14 天**才能上架，那 12 人必須是 Android 使用者
 
 ---
 

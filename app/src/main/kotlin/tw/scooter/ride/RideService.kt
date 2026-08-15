@@ -59,11 +59,27 @@ class RideService : Service() {
         createChannel()
         startInForeground()
         requestUpdates()
-        voice.prepare { ok -> RideRepository.onVoiceReady(ok) }
+        checkVoice()
         RideRepository.onServiceStateChanged(running = true)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            // 騎士照著警告畫面去裝了語音資料，回來按「重新檢查」。重跑整套檢查，
+            // 不必重啟 App —— 要他重啟就等於要他重新授權、重新等 GPS 定位。
+            ACTION_RECHECK_VOICE -> checkVoice()
+            ACTION_REFRESH_VOICE -> voice.refreshStatus()
+        }
+        return START_STICKY
+    }
+
+    private fun checkVoice() {
+        voice.prepare { status ->
+            RideRepository.onVoiceStatus(status)
+            // 騎士切到 Google Maps 之後，這則常駐通知是唯一還看得到的地方。
+            updateNotification(status)
+        }
+    }
 
     override fun onDestroy() {
         voice.release()
@@ -85,21 +101,45 @@ class RideService : Service() {
         }
     }
 
-    private fun startInForeground() {
+    /**
+     * 常駐通知會反映語音狀態。
+     *
+     * 這不是理想的通道 —— 頻道是 IMPORTANCE_LOW，不會彈出來 —— 但騎士切到
+     * Google Maps 之後，在懸浮視窗做出來之前，它是唯一還能改變的畫面。
+     */
+    private fun buildNotification(status: VoiceStatus): Notification {
         val open = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.service_title))
-            .setContentText(getString(R.string.service_text))
+        val title = if (status.silent) R.string.service_title_silent else R.string.service_title
+        val text = when {
+            status.silent -> R.string.service_text_silent
+            status == VoiceStatus.DEGRADED -> R.string.service_text_degraded
+            else -> R.string.service_text
+        }
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(getString(title))
+            .setContentText(getString(text))
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setColor(WARNING_COLOR.takeIf { status.needsWarning } ?: 0)
+            .setColorized(status.silent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    private fun updateNotification(status: VoiceStatus) {
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildNotification(status))
+    }
+
+    private fun startInForeground() {
+        val notification = buildNotification(VoiceStatus.CHECKING)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
@@ -125,9 +165,13 @@ class RideService : Service() {
     companion object {
         private const val CHANNEL_ID = "ride"
         private const val NOTIFICATION_ID = 1
+        private const val WARNING_COLOR = 0xFFFF453A.toInt()
 
         /** 1 秒。時速 60 時約每 17 公尺一次，足以在 300 公尺內穩定命中路口。 */
         private const val UPDATE_INTERVAL_MS = 1_000L
+
+        private const val ACTION_RECHECK_VOICE = "tw.scooter.RECHECK_VOICE"
+        private const val ACTION_REFRESH_VOICE = "tw.scooter.REFRESH_VOICE"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, RideService::class.java))
@@ -135,6 +179,26 @@ class RideService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, RideService::class.java))
+        }
+
+        /** 重跑整套語音檢查，包含重新初始化引擎與補合成音檔。 */
+        fun recheckVoice(context: Context) = sendIfRunning(context, ACTION_RECHECK_VOICE)
+
+        /**
+         * 只重問一次音量。畫面回到前景時呼叫 —— 騎士可能是切出去調音量才回來的，
+         * 為了這件事重跑引擎初始化太重了。
+         */
+        fun refreshVoiceStatus(context: Context) = sendIfRunning(context, ACTION_REFRESH_VOICE)
+
+        /**
+         * 服務沒在跑就不送。否則一個純粹的「查一下狀態」會把整個定位服務叫起來，
+         * 而騎士根本沒有要開始騎。
+         */
+        private fun sendIfRunning(context: Context, action: String) {
+            if (!RideRepository.serviceRunning.value) return
+            context.startForegroundService(
+                Intent(context, RideService::class.java).setAction(action),
+            )
         }
     }
 }
