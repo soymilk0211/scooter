@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">待轉</string>
+
+    <string name="report_hook">待轉</string>
+    <string name="report_hook_sub">兩段式</string>
+    <string name="report_direct">直接</string>
+    <string name="report_direct_sub">左轉</string>
+    <string name="report_inner">內側</string>
+    <string name="report_inner_sub">專用道</string>
+    <string name="report_outer">外側</string>
+    <string name="report_outer_sub">專用道</string>
+
+    <string name="report_locked">停車後即可回報</string>
+    <string name="report_prompt">前方路口是什麼規則？</string>
+    <string name="no_maneuver">尚未取得路口資訊</string>
+
+    <string name="settings">設定</string>
+    <string name="settings_sync">更新資料庫</string>
+    <string name="settings_ducking">背景音量衰減</string>
+    <string name="settings_appearance">外觀</string>
+    <string name="appearance_system">跟隨系統</string>
+    <string name="appearance_dark">深色</string>
+    <string name="appearance_light">淺色</string>
+    <string name="disclaimer">本資訊僅供參考，請以現場標誌與號誌為準</string>
+
+    <string name="service_channel">騎乘中</string>
+    <string name="service_title">待轉警示執行中</string>
+    <string name="service_text">接近路口時會語音提醒</string>
+
+    <string name="permission_needed">需要定位權限才能提醒路口規則</string>
+    <string name="permission_grant">開啟權限</string>
+    <string name="report_saved">已記錄，感謝回報</string>
+    <string name="report_no_bearing">尚未取得行進方向，無法回報</string>
+</resources>

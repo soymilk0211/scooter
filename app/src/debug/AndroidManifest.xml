@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 軌跡回放，僅 debug 版。exported 才能用 adb 觸發。 -->
+        <receiver
+            android:name=".ride.ReplayReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="tw.scooter.REPLAY" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
