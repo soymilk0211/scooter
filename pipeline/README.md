@@ -80,7 +80,8 @@ cp build/scooter_seed.db ../app/src/main/assets/
 ```bash
 python make_corridor_page.py --list             # 有哪些廊道可以判
 python make_corridor_page.py --all              # 全部廊道 + build/corridor_index.html 目錄頁
-# 雙擊 corridor_index.html 開始判，點完按「匯出 JSON」
+python make_corridor_page.py --serve            # 開成本機網站，開著別關
+# 瀏覽器開印出來的網址開始判，點完按「匯出 JSON」
 python apply_image_checks.py build/image_checks_內湖路一段_東.json
 python build_seed.py                            # 不一致的寫進 build/image_conflicts.csv
 python make_ride_list.py                        # 那些矛盾會排到查核清單最前面
@@ -101,6 +102,9 @@ python make_ride_list.py                        # 那些矛盾會排到查核清
   `--link` 直接連 Mapillary（連結有期限，過幾天就變破圖）。
 - `--all` 一次產完所有廊道，並附一頁 `corridor_index.html` 目錄：有影像的排前面，
   每一列的「已判」直接讀該頁的 localStorage，所以進度不必自己記。
+- **目錄頁要用 `--serve` 開。** 從 `file://` 跳到另一個 `file://` 會被某些瀏覽器與
+  檢視器擋掉，畫面變成 `about:blank#blocked` —— 而目錄頁的用途正是跳轉。
+  單獨一頁直接雙擊沒問題，要在多頁之間跳就起伺服器（不重產，只是把 build/ 開成網站）。
 - 判讀紀錄存在瀏覽器的 localStorage，關掉頁面不會不見；**但按過「匯出 JSON」之前，
   那些判讀只存在那一個瀏覽器裡**。
 - 判讀寫進 `field_checks.json` 的 **`image_checks`**，不是 `checks`。兩個陣列在結構上

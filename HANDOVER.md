@@ -296,7 +296,8 @@ cp build/scooter_seed.db ../app/src/main/assets/
 ```bash
 python make_corridor_page.py --list             # 有哪些廊道可以判
 python make_corridor_page.py --all              # 全部廊道 + corridor_index.html 目錄頁
-# 雙擊 corridor_index.html 開始判，點完按「匯出 JSON」
+python make_corridor_page.py --serve            # 開成本機網站（開著別關），從目錄頁開始判
+# 點完按「匯出 JSON」
 python apply_image_checks.py build/image_checks_內湖路一段_東.json
 python build_seed.py && python make_ride_list.py
 ```
@@ -311,6 +312,11 @@ python build_seed.py && python make_ride_list.py
 用 `--serve` 起的伺服器一關掉，已經快取的圖還在、lazy-load 的就 404，於是變成
 「有些圖載得進來、有些載不進來」。內嵌之後這些全部消失。代價是單頁幾 MB，
 以及每個路口只放三張（1024 寬）而不是六張（2048 寬）。
+
+**但目錄頁要用 `--serve` 開。** 從 `file://` 跳到另一個 `file://` 會被某些瀏覽器與
+檢視器擋掉，畫面變成 `about:blank#blocked`（2026-08-16 踩到）—— 而目錄頁的用途正是
+跳轉。單獨一頁雙擊開沒問題，多頁互跳就起伺服器。`--serve` 單獨用不會重產，
+只是把 `build/` 開成網站。
 
 **判讀結果寫進 `field_checks.json` 的 `image_checks`，不是 `checks`。** 訪談定下的
 覆蓋順序是「實地查核 > 官方 > 影像查核」，所以影像**不會改動任何規則** —— 它只做

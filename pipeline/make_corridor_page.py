@@ -23,11 +23,15 @@
     python make_corridor_page.py --list              # 有哪些廊道可以判
     python make_corridor_page.py 內湖路一段           # 該路每個面向各一頁
     python make_corridor_page.py 內湖路一段 --facing 東
-    python make_corridor_page.py --all                    # 全部廊道，兩個方向都產
-    python make_corridor_page.py 內湖路一段 --files        # 相對路徑 + 2048 寬（頁面很小）
-    python make_corridor_page.py 內湖路一段 --serve        # 產完起本機伺服器，印出網址
-    python make_corridor_page.py 內湖路一段 --link         # 影像連 Mapillary（連結會過期）
-    python make_corridor_page.py 內湖路一段 --refetch      # 忽略快取重新查
+    python make_corridor_page.py --all               # 全部廊道 + 目錄頁
+    python make_corridor_page.py --serve             # 不重產，把 build/ 開成本機網站
+    python make_corridor_page.py 內湖路一段 --files   # 相對路徑 + 2048 寬（頁面很小）
+    python make_corridor_page.py 內湖路一段 --link    # 影像連 Mapillary（連結會過期）
+    python make_corridor_page.py 內湖路一段 --refetch # 忽略快取重新查
+
+**目錄頁的連結要用 --serve 開。** 從 file:// 跳到另一個 file:// 會被某些瀏覽器
+與檢視器擋掉（畫面變成 `about:blank#blocked`），而目錄頁的用途正是跳轉。
+單頁直接雙擊開沒問題，多頁互跳就起伺服器。
 """
 
 from __future__ import annotations
@@ -51,6 +55,7 @@ import config
 BUILD = pathlib.Path(__file__).parent / "build"
 TEMPLATE_PATH = pathlib.Path(__file__).parent / "corridor_template.html"
 INDEX_TEMPLATE_PATH = pathlib.Path(__file__).parent / "corridor_index_template.html"
+INDEX_NAME = "corridor_index.html"
 CACHE = BUILD / "cache"
 IMAGE_DIR = BUILD / "corridor_images"
 FIELD_CHECKS = pathlib.Path(__file__).parent / "field_checks.json"
@@ -534,7 +539,7 @@ def write_index(pages: list[dict]) -> pathlib.Path:
         "generated": date.today().isoformat(),
     }.items():
         page = page.replace("{{" + key + "}}", str(value))
-    out = BUILD / "corridor_index.html"
+    out = BUILD / INDEX_NAME
     out.write_text(page.replace("{{rows}}", rows), encoding="utf-8")
     return out
 
@@ -559,6 +564,19 @@ def main() -> int:
 
     names = [a for a in args if not a.startswith("--")]
     flags = {a for a in args if a.startswith("--")}
+
+    # 單獨的 --serve：不重產，直接把已經產好的頁面開成本機網站。
+    # 需要它是因為 file:// 之間的跳轉會被某些檢視器擋掉（畫面是 about:blank#blocked），
+    # 而目錄頁的用途正是跳轉。http 沒有那個限制。
+    if "--serve" in flags and not names and "--all" not in flags:
+        existing = sorted(p for p in BUILD.glob("corridor_*.html")
+                          if p.name != INDEX_NAME)
+        if not existing:
+            print("build/ 裡沒有廊道頁。先跑 python make_corridor_page.py --all")
+            return 1
+        index = BUILD / INDEX_NAME
+        return serve([index] if index.exists() else existing[:1])
+
     if "--all" in flags:
         names = list(corridors())
     if "--facing" in args:
