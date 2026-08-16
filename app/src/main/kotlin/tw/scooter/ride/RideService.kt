@@ -16,8 +16,16 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import tw.scooter.MainActivity
 import tw.scooter.data.ScooterDatabase
+import tw.scooter.settings.SettingsStore
 import tw.scooter.R
 
 /**
@@ -30,6 +38,8 @@ import tw.scooter.R
  * 尚未實作（見「騎乘前檢查」待辦）—— 靜默失效比不能用更危險。
  */
 class RideService : Service() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val client by lazy { LocationServices.getFusedLocationProviderClient(this) }
 
@@ -60,7 +70,23 @@ class RideService : Service() {
         startInForeground()
         requestUpdates()
         checkVoice()
+        followSettings()
         RideRepository.onServiceStateChanged(running = true)
+    }
+
+    /**
+     * 設定由服務自己訂閱，不等畫面來推。
+     *
+     * 服務被 START_STICKY 拉回來時 Activity 可能根本不存在（騎士切去 Google Maps
+     * 之後系統回收了它），那時若靠畫面來設定，衰減開關就會悄悄回到預設值。
+     */
+    private fun followSettings() {
+        scope.launch {
+            SettingsStore.flow(this@RideService)
+                .map { it.duckOthers }
+                .distinctUntilChanged()
+                .collect { RideRepository.setDuckOthers(it) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -82,6 +108,7 @@ class RideService : Service() {
     }
 
     override fun onDestroy() {
+        scope.cancel()
         voice.release()
         client.removeLocationUpdates(callback)
         RideRepository.onServiceStateChanged(running = false)

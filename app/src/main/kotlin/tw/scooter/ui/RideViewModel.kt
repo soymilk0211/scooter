@@ -17,6 +17,9 @@ import kotlinx.coroutines.withContext
 import tw.scooter.data.Schema
 import tw.scooter.data.ScooterDatabase
 import tw.scooter.ride.RideRepository
+import tw.scooter.settings.Settings
+import tw.scooter.settings.SettingsStore
+import tw.scooter.ui.theme.AppearanceMode
 import tw.scooter.ride.VoiceRemedy
 import tw.scooter.ride.VoiceStatus
 import tw.scooter.ride.performRemedy
@@ -65,6 +68,15 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val _outcome = MutableStateFlow<ReportOutcome?>(null)
     val outcome: StateFlow<ReportOutcome?> = _outcome.asStateFlow()
 
+    /**
+     * 落地的設定。**還沒從磁碟讀回來時是 null**，畫面在那之前不畫任何東西。
+     *
+     * 大可先用預設值畫一次再換過去，但那會讓選了淺色的騎士每次冷啟動都看到一閃的
+     * 深色。這裡等的是一次本機小檔讀取，通常在第一幀之前就結束了。
+     */
+    val settings: StateFlow<Settings?> =
+        SettingsStore.flow(app).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     private val ride: Flow<RideUiState> = combine(
         RideRepository.state,
         RideRepository.serviceRunning,
@@ -104,6 +116,18 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             dismissedVoiceStatus.value = RideRepository.voiceStatus.value
         }
         performRemedy(getApplication(), remedy)
+    }
+
+    fun onAppearanceChanged(mode: AppearanceMode) {
+        viewModelScope.launch { SettingsStore.setAppearance(getApplication(), mode) }
+    }
+
+    /**
+     * 背景音量衰減。只寫進設定，不直接改 [RideRepository] ——
+     * 服務自己訂閱同一份設定，讓「誰是權威」只有一個答案。
+     */
+    fun onDuckingChanged(enabled: Boolean) {
+        viewModelScope.launch { SettingsStore.setDuckOthers(getApplication(), enabled) }
     }
 
     fun onManeuverChanged(entryRoad: String?, exitRoad: String?) {

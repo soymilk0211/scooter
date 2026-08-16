@@ -71,6 +71,20 @@ AVD 影像損壞（另建全新 AVD）、磁碟與記憶體 —— **全部都�
 啟動失敗時 emulator 會跳一個**強制回應的 crash 對話框**；若視窗是最小化或隱藏的，
 它會看起來像「凍結在 0% CPU」。用 `-no-metrics`，或把視窗開出來看。
 
+**滾輪要用 uinput 才測得到。** 這台 AVD 上 `adb shell getevent -pl` 只列得出
+`virtio_input_multi_touch_1..11`、Power Button 與鍵盤，**沒有任何 `REL_WHEEL`**
+（那一次是全程用 adb 驅動、模擬器視窗沒收過主機滑鼠事件，所以不能斷定裝置永遠不存在，
+只能說當下沒有）。無論如何，`adb shell input` 沒有 scroll 命令，要送真正的
+`ACTION_SCROLL` 就掛一個 uinput 虛擬滑鼠：
+
+```bash
+adb push mouse.json /data/local/tmp/ && adb shell 'uinput - < /data/local/tmp/mouse.json'
+```
+
+`mouse.json` 用 `register`（`configuration` 要 `UI_SET_EVBIT` 100 給 `EV_KEY`/`EV_REL`、
+`UI_SET_RELBIT` 102 給 `REL_X`/`REL_Y`/`REL_WHEEL`）之後 `inject` `[2,8,1, 0,0,0]`，
+一組就是一格滾輪。`delay` 命令要夾在中間，否則裝置註冊完就隨著 stdin 關閉被移除。
+
 祕密放在 `pipeline/.env`（已 gitignore）：`MAPILLARY_TOKEN`、`CGU_API_KEY`。
 
 ---
@@ -85,9 +99,10 @@ AVD 影像損壞（另建全新 AVD）、磁碟與記憶體 —— **全部都�
 - **語音**：首次啟動預合成五句話成 wav，播報時放本機檔（即時 TTS 首句延遲實測 2.8–3.6 秒，路口等不起）；`USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`
 - **語音失效警告**（2026-08-15，**2026-08-16 已在模擬器上實測通過**，見下節）
 - **極簡底圖深淺兩色**（2026-08-16，已實測；切換設定即時換皮）
+- **設定落地**（2026-08-16，已實測）：外觀與背景音量衰減存進 DataStore，冷啟動不再回到預設
 - 種子資料庫內附於 APK，首次啟動複製到可寫位置
 
-**32 項單元測試全綠**（core-rules 19、app 13），`./gradlew build` 通過，APK 53 MB。
+**37 項單元測試全綠**（core-rules 19、app 18），`./gradlew build` 通過，APK 53 MB。
 
 ### 2026-08-16 在模擬器上實測通過的項目
 
@@ -100,6 +115,44 @@ AVD 影像損壞（另建全新 AVD）、磁碟與記憶體 —— **全部都�
 | 重新檢查 | `pm enable` 後按下去，警告自己消失 |
 | 版面 | 警告列把回報列往下推，沒有雙倍狀態列間距 |
 | 崩潰 | `AndroidRuntime:E` 全空 |
+| 抽屜不再被地圖拉出來 | 畫面中央橫拉 `input swipe 300 1500 850 1500`，地圖平移、抽屜沒出現 |
+| 抽屜仍可按開、可滑掉 | 按三橫槓會開；開著時往左滑會關，而且**後面的地圖沒有跟著平移** |
+| 滾輪縮放 | `MapCanvas: wheel zoom by 1.0 -> 16.0 / 1.0 -> 17.0 / -1.0 -> 16.0`，一格一級、以游標為心、不平移 |
+| 滾輪之後觸控還活著 | 緊接著 `input swipe` 仍然平移（見下節「刻意不 consume」） |
+| 外觀落地 | 選淺色 → `am force-stop` → 重開，冷啟動第一次就是 `style loaded dark=false`，沒有先深後淺的閃爍 |
+| 衰減開關落地 | 關掉 → 重開 → 抽屜裡仍是關的；`files/datastore/settings.preferences_pb` 內含 `appearance LIGHT` 與 `duck_others` |
+
+### Bug 批次（路線圖第 1 項，2026-08-16 完成）
+
+三件事各自的坑不一樣，值得記下來：
+
+**抽屜手勢**用的是 `gesturesEnabled = drawerState.isOpen`，不是交接文件原本寫的 `false`。
+Material3 的開啟手勢吃的是**整個內容區**的橫拉，不只是左緣，所以騎士要把地圖往右推就會拉出設定；
+但關閉手勢沒有東西跟它搶。寫死 `false` 會連帶把「滑掉抽屜」也拿走，換成只在開著時啟用，
+兩邊都對。
+
+**滾輪縮放在 Compose 裡必須自己接。** MapLibre 內建的那份
+（`MapView.onGenericMotionEvent` 依 `AXIS_VSCROLL` 縮放）**永遠不會被呼叫** ——
+`AndroidComposeView.dispatchGenericMotionEvent` 攔下 `ACTION_SCROLL` 走自己的 pointer input，
+不再往子 View 分發。真正到得了 MapView 的，是 `AndroidView` 的 interop filter
+**經由 `dispatchTouchEvent`** 送回來的同一顆事件，於是被手勢辨識讀成拖曳 —— 那就是「上下平移」。
+所以 `MapCanvas` 現在有兩塊：`WheelSafeMapView` 把觸控通道裡的 `ACTION_SCROLL` 丟掉，
+`Modifier.wheelZoom` 在 Compose 那層做縮放。
+
+- **刻意不 consume 那些事件。** consume 會讓 interop filter 轉進 `NotDispatching`，
+  而它要等到「所有指標都放開」才復位 —— 也就是滾一次滾輪之後，下一個觸控手勢會被整個吃掉。
+  平移已經在 `WheelSafeMapView` 擋掉了，不需要再擋一次。
+- 這條路徑在真機上用不到（手機沒有滾輪），只影響開發時的手感。
+- **驗證是用 uinput 虛擬滑鼠送的**（見第一節）。如果實際用主機滾輪還是平移，
+  代表模擬器把滾輪翻成了觸控拖曳而不是 `ACTION_SCROLL` —— 那時 App 分不出它跟手指拖曳，
+  要從模擬器那邊解（讓它建出滑鼠裝置），不是改 App。
+
+**設定落地**用 DataStore（`files/datastore/settings.preferences_pb`）。
+`RideViewModel.settings` 在讀回來之前是 `null`，`ScooterApp` 那時**什麼都不畫** ——
+先用預設值畫一次再換過去，選淺色的人每次冷啟動都會看到一閃的深色，而那是最顯眼的一幀。
+視窗底色本來就是黑的，所以看起來只是啟動畫面多停一下。
+**服務自己訂閱設定**（`RideService.followSettings`），不等畫面來推：`START_STICKY` 把服務拉回來時
+Activity 可能根本不存在，靠畫面設定的話衰減開關會悄悄回到預設值。
 
 ### ⚠ 底圖現在用的來源不能上線
 
@@ -261,7 +314,7 @@ cp build/scooter_seed.db ../app/src/main/assets/
 
 | # | 項目 | 內容 |
 | --- | --- | --- |
-| 1 | **Bug 批次** | 抽屜 `gesturesEnabled = false`（拉地圖會把抽屜拉出來）；**滾輪改成縮放**（現在是上下平移）；設定用 `DataStore` 落地（外觀與「背景音量衰減」現在寫成 `remember`，重開就還原） |
+| 1 | ~~**Bug 批次**~~ **✅ 2026-08-16 完成並在模擬器上實測** | 抽屜手勢（改用 `gesturesEnabled = drawerState.isOpen`）；滾輪縮放；設定用 `DataStore` 落地。細節見第二節「Bug 批次」 |
 | 2 | **影像判讀工具** | 產廊道 HTML 頁：一條路一個方向，每個有左轉動線的路口一張 Mapillary 影像 + 經緯度 + 面向角度，使用者點選規則，匯出 JSON 回填 `field_checks.json`。**不可發布成 Artifact**（CSP 擋外部主機，圖載不進來），存本機檔用瀏覽器開 |
 | 3 | **測速照相 + 時速圓圈** | 可拖曳的時速圓圈（先做 App 內，元件寫成與畫面無關以便日後搬進懸浮視窗）；接 [測速執法設置點](https://data.gov.tw/dataset/7320)（含經緯度、速限、**拍攝方向**）；**排除國道與快速道路**（ADR-0006 白牌禁行）；`enforcement_sections` 空表先建好 |
 | 4 | **各縣市結構** | `TAIPEI_DEFAULTS` 改成以縣市為鍵的登錄表；**修正 §99 法源推導**（見下）；**臺/台 正規化**；`districts.py` 的 bbox 參數化 |

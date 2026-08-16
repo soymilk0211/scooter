@@ -29,9 +29,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,7 +42,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
-import tw.scooter.ride.RideRepository
 import tw.scooter.ride.RideService
 import tw.scooter.ui.AlertBanner
 import tw.scooter.ui.MapCanvas
@@ -55,7 +51,6 @@ import tw.scooter.ui.RideViewModel
 import tw.scooter.ui.SettingsDrawer
 import tw.scooter.ui.TopReportBar
 import tw.scooter.ui.VoiceWarning
-import tw.scooter.ui.theme.AppearanceMode
 import tw.scooter.ui.theme.ScooterTheme
 import tw.scooter.ui.theme.resolvesToDark
 
@@ -78,8 +73,12 @@ private val requiredPermissions: Array<String>
 @Composable
 private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
     val context = LocalContext.current
-    var appearance by remember { mutableStateOf(AppearanceMode.DARK) }
-    var ducking by remember { mutableStateOf(true) }
+
+    // 設定還沒從磁碟讀回來之前，這裡什麼都不畫。視窗底色本來就是黑的
+    // （Theme.Scooter 的 windowBackground），所以看起來只是啟動畫面多停一下 ——
+    // 而不是先用預設值畫一次深色、讀到偏好後才閃成淺色。
+    val settings = viewModel.settings.collectAsState().value ?: return
+
     val state by viewModel.state.collectAsState()
     val outcome by viewModel.outcome.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -122,26 +121,27 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    ScooterTheme(mode = appearance) {
+    ScooterTheme(mode = settings.appearance) {
         ModalNavigationDrawer(
             drawerState = drawerState,
+            // 整個畫面底下就是一張可以拖的地圖，而抽屜的開啟手勢吃掉了左緣往右拖 ——
+            // 騎士想把地圖往右推，拉出來的是設定。開著的時候仍然可以滑掉，
+            // 那個手勢沒有東西跟它搶。
+            gesturesEnabled = drawerState.isOpen,
             drawerContent = {
                 ModalDrawerSheet {
                     SettingsDrawer(
-                        duckingEnabled = ducking,
-                        appearance = appearance,
-                        onDuckingChanged = {
-                            ducking = it
-                            RideRepository.setDuckOthers(it)
-                        },
-                        onAppearanceChanged = { appearance = it },
+                        duckingEnabled = settings.duckOthers,
+                        appearance = settings.appearance,
+                        onDuckingChanged = viewModel::onDuckingChanged,
+                        onAppearanceChanged = viewModel::onAppearanceChanged,
                         onSync = { /* 同步實作待後端 diff 端點就緒 */ },
                     )
                 }
             },
         ) {
             Box(Modifier.fillMaxSize()) {
-                MapCanvas(Modifier.fillMaxSize(), dark = appearance.resolvesToDark())
+                MapCanvas(Modifier.fillMaxSize(), dark = settings.appearance.resolvesToDark())
 
                 // 用 Column 讓選單按鈕自然排在回報列下方。先前用固定位移量去猜
                 // 回報列的高度，結果兩者疊在一起 —— 版面高度該由版面決定，不該手算。
