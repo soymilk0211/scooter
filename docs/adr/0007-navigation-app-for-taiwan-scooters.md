@@ -1,6 +1,11 @@
 ---
-status: accepted (amends ADR-0003, finally reverses ADR-0002)
+status: superseded by ADR-0010
 ---
+
+> **本決定已於 2026-08-16 當日被 ADR-0010 推翻。** 下面用來否決「不做導航」的
+> 噪音論證，事實上不成立：警示引擎只對已建檔的例外路口發聲（全臺北 118 個），
+> 不是對每一個有規則的路口。保留全文是因為推翻它的理由要對照著讀才有意義。
+
 
 # 本 App 就是導航 App，正面對決 Google Maps
 

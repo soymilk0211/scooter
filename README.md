@@ -1,6 +1,8 @@
 # Scooter
 
-台灣機車左轉規則警示 App。設計背景見 [CONTEXT.md](CONTEXT.md) 與 [docs/adr/](docs/adr/)。
+台灣機車左轉規則警示 App，**疊在 Google Maps 上的外掛，不自己做導航**
+（[ADR-0010](docs/adr/0010-overlay-on-google-maps-not-a-navigation-app.md)）。
+設計背景見 [CONTEXT.md](CONTEXT.md) 與 [docs/adr/](docs/adr/)。
 
 ## 建置
 
@@ -37,24 +39,24 @@ JAVA_HOME=/c/Users/user/Android/jdk/jdk-21.0.12+8 ANDROID_HOME=C:/Users/user/And
 
 ## 目前完成度
 
-**可用**：專案骨架、規則引擎（距離／方位角／速度／生效時段／冷卻，18 項測試通過）、
-SQLite 結構與種子資料庫、定位前景服務、主畫面（深色地圖 + 頂部回報列 + 設定抽屜）、
-[資料管線](pipeline/README.md)。
+**可用且已在模擬器上實測**：規則引擎（距離／方位角／速度／生效時段／冷卻）、
+SQLite 結構與種子資料庫（臺北 118 條規則、1,523 個固定測速點）、定位前景服務、
+語音警示與失效警告、固定測速警示、可拖曳時速圓圈、深淺兩色底圖與設定落地、
+[資料管線](pipeline/README.md)。**57 項單元測試全綠**（core-rules 31、app 26）。
 
 **已驗證的假設**：台灣 Valhalla 圖磚 309 MB（ADR-0003）；`motor_scooter` costing
-確實避開國道（ADR-0006）。
+確實避開國道（ADR-0006）。兩者在 ADR-0010 之後暫時用不到，結論留著備查。
 
-**未接上**：懸浮視窗、Valhalla 與 App 的整合、資料同步、後端、被動觀察偵測。
+**未接上**：懸浮視窗（收斂之後唯一還缺的功能）、被動觀察偵測、資料同步、區間測速。
 
 ## 已知待辦
 
-- 底圖借用 CARTO 的公開端點（Positron／Dark Matter），免費但有使用條款，商用需方案。
-  正式版要換成自有或商用**向量**圖磚 —— 換的時候只動 `app/.../ui/MapStyle.kt`。
-- 32 個路口無法自動定位，需人工補座標 —— 見 `pipeline/build/review_coords.csv`。
+- **從未在真機上跑過**，只有模擬器。GPS 精度、廠牌 ROM 背景清殺、太陽下過熱都還沒驗。
+- 底圖借用 CARTO 的公開端點（Positron／Dark Matter），其條款**不供公開免費使用**，
+  上架前必須換成自建向量圖磚 —— 換的時候只動 `app/.../ui/MapStyle.kt`。
+- 19 個路口無法自動定位，需人工補座標 —— 見 `pipeline/build/review_coords.csv`。
 - 被動偵測待轉的演算法尚未以真實軌跡驗證，是目前風險最高的假設（[ADR-0005](docs/adr/0005-passive-observation-with-asymmetric-weighting.md)）。
-- **最新的介面（語音失效警告、新底圖與淺色模式）沒有在任何裝置上看過**，
-  這台機器的模擬器開機到一半就凍結（見 [HANDOVER.md](HANDOVER.md) 第一節）。
-  目前只驗證了編譯與單元測試。
+  ADR-0010 之後它同時也是唯一的規模化途徑，風險因此更高。
 
 ## 免責
 
