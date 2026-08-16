@@ -70,7 +70,10 @@
       "source": "騎士回報 + 地圖",
       "note": "官方清冊寫的動線不存在：水源路是單行道，不會通往泉州街。實際可左轉進泉州街的是中華路二段，面向東、左轉朝北。原規則撤下，正確的那條以 add 補上。",
       "rules": [
-        { "approach_bearing": 270, "exists": false },
+        {
+          "approach_bearing": 270,
+          "exists": false
+        },
         {
           "add": true,
           "approach_bearing": 90,
@@ -194,6 +197,80 @@
       "source": "現場紅底標誌",
       "sign_text": "環河北路禁行機車，往延平北路六段511巷除外",
       "exception": "往延平北路六段511巷"
+    }
+  ],
+  "_image_comment": [
+    "影像判讀結果。**權威低於官方資料**，與 checks（實地查核）不是同一個等級。",
+    "",
+    "證據覆蓋順序：實地查核 > 官方 > 影像查核（依影像年份遞減）> 回報共識 > 觀察。",
+    "build_seed.py 不會拿這裡的東西去改規則，只會比對；不一致的寫進",
+    "build/image_conflicts.csv，由人決定要不要騎一趟。",
+    "",
+    "由 make_corridor_page.py 產生的頁面判讀後，用 apply_image_checks.py 併入。"
+  ],
+  "image_checks": [
+    {
+      "junction_text": "中正路與延平北路",
+      "checked_on": "2026-08-16",
+      "source": "影像查核（Mapillary 463745554696029，攝於 2020-08-11）",
+      "note": "我用google地圖看2025的資料寫說機車可以直接左轉",
+      "evidence": {
+        "kind": "image",
+        "provider": "mapillary",
+        "image_id": "463745554696029",
+        "captured_on": "2020-08-11",
+        "corridor": "中正路",
+        "facing": 90,
+        "said_before": 2
+      },
+      "rules": [
+        {
+          "approach_bearing": 90,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "中正路與文昌路",
+      "checked_on": "2026-08-16",
+      "source": "影像查核（Mapillary 1957773831352031，攝於 2024-09-14）",
+      "note": "",
+      "evidence": {
+        "kind": "image",
+        "provider": "mapillary",
+        "image_id": "1957773831352031",
+        "captured_on": "2024-09-14",
+        "corridor": "中正路",
+        "facing": 90,
+        "said_before": 2
+      },
+      "rules": [
+        {
+          "approach_bearing": 90,
+          "turn_rule": 2
+        }
+      ]
+    },
+    {
+      "junction_text": "中正路與文林路",
+      "checked_on": "2026-08-16",
+      "source": "影像查核（Mapillary 337698061279652，攝於 2020-07-28）",
+      "note": "",
+      "evidence": {
+        "kind": "image",
+        "provider": "mapillary",
+        "image_id": "337698061279652",
+        "captured_on": "2020-07-28",
+        "corridor": "中正路",
+        "facing": 90,
+        "said_before": 2
+      },
+      "rules": [
+        {
+          "approach_bearing": 90,
+          "turn_rule": 2
+        }
+      ]
     }
   ]
 }

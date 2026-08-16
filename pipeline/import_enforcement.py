@@ -24,6 +24,8 @@ import re
 import sys
 import urllib.request
 
+import taiwan
+
 BUILD = pathlib.Path(__file__).parent / "build"
 TAIPEI_SMART_PID = "986fa73e-c470-4ebf-9f35-3a1c9d2a8788"
 
@@ -34,9 +36,11 @@ SPEED_CAMERA_URL = (
     "18C2419F-552D-4684-919D-0DF3AF4D57ED/download"
 )
 
-# 種子庫目前只涵蓋臺北市，與路口規則同範圍。路線圖第 4 項把它改成以縣市為鍵的
-# 登錄表之後，這裡跟著放寬即可 —— 解析與排除規則本來就是全國通用的。
-SEED_CITIES = {"臺北市"}
+# 測速點寫入全國，**不跟著路口規則的縣市範圍走**（ADR-0009）。兩者的邊界不同，
+# 因為兩者的失敗方式不同：測速點自帶座標、速限與拍攝方向，不依賴任何推導，
+# 多收一個縣市只會多一則正確的警示；路口的預設規則靠推導，沒查證過的縣市會
+# 整批播錯。全國 1,523 筆只讓種子庫多幾百 KB。
+SEED_CITIES: set[str] | None = None  # None = 不篩選
 
 # enforcement_points.kind，與 Schema.kt 的 EnforcementKind 一致。
 KIND_FIXED_SPEED = 1
@@ -73,8 +77,11 @@ COMPASS = {"北": 0.0, "東北": 45.0, "東": 90.0, "東南": 135.0,
 
 # 國道與快速道路的線號。台61～台88 這個區塊是快速公路系列（西濱、台64、台68…），
 # 而它們的地址常常只寫「台61線60.1公里處」，沒有任何「快速」字樣 —— 只靠關鍵字
-# 會漏掉 11 筆速限 90 的點位。臺／台兩種寫法都要吃（見 HANDOVER 第六節）。
-EXPRESSWAY_NUMBER = re.compile(r"[台臺](6[1-9]|7[0-9]|8[0-8])線")
+# 會漏掉 11 筆速限 90 的點位。
+#
+# 臺／台兩種寫法在同一份資料裡都有，但這裡不再用字元類別去吃 —— 地址一進來就先過
+# `taiwan.normalize_tw()`，正規化只做一次，之後的樣式都只認「台」。
+EXPRESSWAY_NUMBER = re.compile(r"台(6[1-9]|7[0-9]|8[0-8])線")
 
 MOTORWAY_KEYWORDS = ("國道", "高速公路", "快速道路", "快速公路", "匝道", "高架")
 
@@ -115,6 +122,7 @@ def facing_of(raw: str) -> float | None:
 
 
 def is_motorway(address: str, limit: int | None) -> bool:
+    address = taiwan.normalize_tw(address)
     if any(k in address for k in MOTORWAY_KEYWORDS):
         return True
     if EXPRESSWAY_NUMBER.search(address):
@@ -224,8 +232,9 @@ def main() -> int:
     turn = [p for p in smart if p["enforces_turn"]]
 
     cameras, sections, stats = fetch_speed_cameras()
-    seed_cameras = [c for c in cameras if c["city"] in SEED_CITIES]
-    seed_sections = [s for s in sections if s["city"] in SEED_CITIES]
+    in_seed = (lambda item: True) if SEED_CITIES is None else (lambda item: item["city"] in SEED_CITIES)
+    seed_cameras = [c for c in cameras if in_seed(c)]
+    seed_sections = [s for s in sections if in_seed(s)]
 
     BUILD.mkdir(exist_ok=True)
     (BUILD / "enforcement_raw.json").write_text(
@@ -253,7 +262,9 @@ def main() -> int:
     limits = sorted({c["speed_limit"] for c in cameras if c["speed_limit"]})
     print(f"  速限範圍          {limits[0]}–{limits[-1]}")
 
-    print(f"\n寫入種子庫（{'、'.join(sorted(SEED_CITIES))}）")
+    scope = "全國" if SEED_CITIES is None else "、".join(sorted(SEED_CITIES))
+    print(f"\n寫入種子庫（{scope}）")
+    print(f"  涵蓋縣市      {len({c['city'] for c in seed_cameras})} 個")
     print(f"  科技執法      {len(relevant)} 筆")
     print(f"  固定測速      {len(seed_cameras)} 筆"
           f"（{sum(1 for c in seed_cameras if c['bearing'] is None)} 筆不限方向）")

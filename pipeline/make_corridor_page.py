@@ -41,7 +41,6 @@ import html
 import json
 import math
 import pathlib
-import re
 import sys
 import time
 import urllib.error
@@ -51,6 +50,7 @@ from datetime import date, datetime, timezone
 
 import build_seed
 import config
+import taiwan
 
 BUILD = pathlib.Path(__file__).parent / "build"
 TEMPLATE_PATH = pathlib.Path(__file__).parent / "corridor_template.html"
@@ -89,18 +89,11 @@ FACING = {0.0: "北", 90.0: "東", 180.0: "南", 270.0: "西"}
 FACING_BY_LABEL = {v: k for k, v in FACING.items()}
 RULE_LABEL = {0: "中性播報", 1: "待轉", 2: "直接左轉", 3: "內側專用道", 4: "外側專用道"}
 
-ARABIC_TO_CHINESE = {"1": "一", "2": "二", "3": "三", "4": "四", "5": "五",
-                     "6": "六", "7": "七", "8": "八", "9": "九"}
-
-
-def canonical(name: str) -> str:
-    """路名比對用的正規化形式。
-
-    `臺`／`台` 與阿拉伯／中文段號在同一份資料裡混用（`康寧路3段` 與 `內湖路一段`
-    是同一個 CSV 出來的）。命令列打哪一種都該找得到同一條廊道。
-    """
-    out = name.strip().replace("臺", "台")
-    return re.sub(r"(\d)(?=段)", lambda m: ARABIC_TO_CHINESE.get(m.group(1), m.group(1)), out)
+# 路名正規化搬進 taiwan.py（原本這裡與 import_enforcement 各有一份，而且語義不同）。
+# **行為一個字都不能改** —— 判讀頁的 localStorage 鍵是 `corridor:<canonical>:<facing>`，
+# 也是 HTML 的檔名。改了等於把使用者已經判好的紀錄整批藏起來，而畫面上看起來
+# 會像「進度歸零」，不像「鍵換了」。
+canonical = taiwan.canonical_road
 
 
 def along(lat: float, lon: float, bearing: float) -> float:

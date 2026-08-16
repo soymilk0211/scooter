@@ -18,6 +18,9 @@ import re
 import sqlite3
 import sys
 
+import default_rules
+import taiwan
+
 BUILD = pathlib.Path(__file__).parent / "build"
 SEED = BUILD / "scooter_seed.db"
 
@@ -109,22 +112,16 @@ CREATE = [
 STATUS_OFFICIAL = 1
 TODAY_YEAR = 2026
 
-TURN_UNKNOWN, TURN_HOOK, TURN_DIRECT = 0, 1, 2
+TURN_UNKNOWN = default_rules.TURN_UNKNOWN
+TURN_HOOK = default_rules.TURN_HOOK
+TURN_DIRECT = default_rules.TURN_DIRECT
 
 # 給人看的 CSV 用。複查清單是拿去騎車的，寫「1」不寫「待轉」等於逼人邊騎邊查表。
 TURN_LABEL = {0: "中性播報", 1: "待轉", 2: "直接左轉", 3: "內側專用道", 4: "外側專用道"}
 
-# 台北市的預設左轉規則（ADR-0004）。依交通局說明：二車道道路原則上開放機車
-# 直接左轉，三車道以上原則上須待轉、個案檢討才免待轉。rules 表存的是那些個案例外。
-#
-# 未解的問題：「車道數」是單向還是雙向計算，官方說明沒有寫死。OSM 的 `lanes`
-# 標籤通常是雙向總數，`lanes:forward` 才是單向。比對時取單向數，因為法規談的
-# 是騎士所在方向的車道配置 —— 但這是推論，尚未查證，因此信心給得保守。
-TAIPEI_DEFAULTS = [
-    # (min_lanes, max_lanes, turn_rule, confidence)
-    (1, 2, TURN_DIRECT, 60),
-    (3, 99, TURN_HOOK, 70),
-]
+# 預設左轉規則搬到 default_rules.py（ADR-0004、ADR-0009）。那裡以縣市碼為鍵，
+# 並把「法條」與「某個縣市的行政實務」分開 —— 原本寫在這裡的「三車道以上待轉」
+# 是臺北市交通局的實務，不是 §99 的推導，而放在這裡看起來像後者。
 
 
 
@@ -412,12 +409,22 @@ def main() -> int:
     # 預設規則涵蓋所有沒有個別建檔的路口 —— 沒有這張表，覆蓋率等於只有 114 個路口。
     # 行政區代碼直接取自開放資料，不硬編。
     region_codes = sorted({r["region_code"] for r in rules if r.get("region_code")})
+    covered_regions = 0
+    unregistered: dict[str, int] = {}
     for code in region_codes:
-        for min_lanes, max_lanes, turn_rule, conf in TAIPEI_DEFAULTS:
+        city = default_rules.defaults_for(code)
+        if city is None:
+            # 沒登錄的縣市**不產生預設規則**（ADR-0009）。猜一份出來會在那個縣市的
+            # 幾千個路口同時播錯，而沉默只是回到「只有個別建檔的路口有規則」。
+            key = taiwan.city_of(code)
+            unregistered[key] = unregistered.get(key, 0) + 1
+            continue
+        covered_regions += 1
+        for band in city.bands:
             db.execute(
                 "INSERT INTO default_rules (region_code, min_lanes, max_lanes, turn_rule,"
                 " confidence, updated_at) VALUES (?,?,?,?,?,?)",
-                (code, min_lanes, max_lanes, turn_rule, conf, 0),
+                (code, band.min_lanes, band.max_lanes, band.turn_rule, band.confidence, 0),
             )
 
     # 執法點位。自帶座標，不需地理編碼。
@@ -470,7 +477,10 @@ def main() -> int:
         "SELECT COUNT(*), MIN(confidence), MAX(confidence) FROM rules").fetchone()
     print(f"  信心範圍  {coverage[1]}–{coverage[2]}")
     defaults = db.execute("SELECT COUNT(*) FROM default_rules").fetchone()[0]
-    print(f"  預設規則  {defaults} 筆（{len(region_codes)} 個行政區 × {len(TAIPEI_DEFAULTS)} 條）")
+    print(f"  預設規則  {defaults} 筆（{covered_regions} 個行政區）")
+    for city_code, districts in sorted(unregistered.items()):
+        print(f"    縣市 {city_code} 未登錄預設規則，{districts} 個行政區只有個別規則"
+              f"（見 default_rules.py）")
     print(f"  執法點位  {enforcement_count} 筆")
     print(f"  降級規則  {len(downgraded)} 筆（離開方向為機車禁行路段）")
     print(f"  實地查核  {verified} 筆（信心 100，蓋過自動推導），新增 {added} 筆")
