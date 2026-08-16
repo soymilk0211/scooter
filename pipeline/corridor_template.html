@@ -1,0 +1,409 @@
+<!-- charset 必須在最前面。沒有它，瀏覽器會用系統預設編碼猜，整頁中文變成亂碼 ——
+     用 http 開時伺服器不送 charset，用 file:// 開時根本沒有標頭可送。 -->
+<meta charset="utf-8">
+<title>廊道判讀：{{road}} 面向{{facing}}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ground: #F4F6F3;
+    --surface: #FFFFFF;
+    --ink: #131A16;
+    --muted: #5C6A63;
+    --faint: #8B978F;
+    --line: #DCE2DD;
+    --line-strong: #C2CCC5;
+    --hook: #A85C05;
+    --hook-bg: #F8EEDD;
+    --direct: #126743;
+    --direct-bg: #E4F0E9;
+    --check: #9C3A24;
+    --check-bg: #F8E9E4;
+    --neutral-chip: #EAEEEB;
+    --shadow: 0 1px 2px rgba(19, 26, 22, .06), 0 8px 24px -16px rgba(19, 26, 22, .35);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1210;
+      --surface: #151C18;
+      --ink: #E7EDE9;
+      --muted: #93A199;
+      --faint: #6D7A73;
+      --line: #232C27;
+      --line-strong: #33403A;
+      --hook: #E5A249;
+      --hook-bg: #2A2013;
+      --direct: #5BBF8B;
+      --direct-bg: #12241B;
+      --check: #E0806A;
+      --check-bg: #2B1A15;
+      --neutral-chip: #1E2622;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei",
+                 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 36px 20px 140px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: .01em; }
+  .lede { color: var(--muted); margin: 0; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .warn {
+    background: var(--check-bg);
+    color: var(--check);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13.5px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px 20px;
+    box-shadow: var(--shadow);
+    scroll-margin-top: 20px;
+  }
+  .card.is-settled { opacity: .62; }
+  .card.done { border-color: var(--line-strong); }
+
+  .card > header { display: flex; align-items: flex-start; gap: 14px; }
+  .seq {
+    flex: none; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--neutral-chip); color: var(--muted);
+    display: grid; place-items: center; font-size: 13px; font-variant-numeric: tabular-nums;
+  }
+  .who { flex: 1 1 auto; min-width: 0; }
+  .who h2 { font-size: 18px; margin: 0; font-weight: 600; }
+  .roads { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  .arrow { color: var(--faint); margin: 0 7px; }
+
+  .facing { flex: none; display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .facing span { display: flex; flex-direction: column; line-height: 1.2; font-size: 13px; }
+  .facing small { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .glyph { width: 26px; height: 26px; }
+
+  .says { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+  .says b { font-weight: 600; }
+  .rule-1 { color: var(--hook); }
+  .rule-2 { color: var(--direct); }
+  .rule-3, .rule-4 { color: var(--muted); }
+  .says .meta { display: block; color: var(--faint); font-size: 12.5px; margin-top: 2px; }
+  .says a { color: inherit; }
+
+  .settled { margin: 8px 0 0; font-size: 13px; color: var(--direct); }
+
+  .viewer { margin-top: 14px; }
+  .frame { margin: 0; }
+  .frame[hidden] { display: none; }
+  /* 不裁切。判讀靠的就是牌子，而牌子多半在畫面上緣或側邊 —— object-fit: cover
+     為了湊固定比例會把它們切掉，全景更是被切到只剩正前方。寧可版面高矮不一。 */
+  .frame img {
+    width: 100%; height: auto; display: block; border-radius: 10px;
+    background: var(--neutral-chip); min-height: 120px;
+  }
+  figcaption {
+    margin-top: 6px; font-size: 12.5px; color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+  figcaption a { color: var(--muted); }
+
+  .noimage, .broken {
+    padding: 22px; border: 1px dashed var(--line-strong); border-radius: 10px;
+    color: var(--muted); font-size: 13.5px; text-align: center;
+  }
+  /* 載不出來的圖必須說話。空白的框跟「這個路口沒有街景」長得一模一樣，
+     而那兩件事該做的處置完全相反。 */
+  .broken { color: var(--check); background: var(--check-bg); border-style: solid; }
+
+  .strip { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .strip.hidden { display: none; }
+  /* 只有一張時翻頁鍵沒有意義，但「周邊有幾張」還是要看得到 ——
+     那是判斷「這裡真的沒有影像」還是「查詢被截斷」的唯一線索。 */
+  .strip.single .step, .strip.single .counter { display: none; }
+  .counter { color: var(--faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .nearby { color: var(--faint); font-size: 12.5px; margin-left: auto; }
+
+  button {
+    font: inherit; cursor: pointer; border-radius: 9px;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+    padding: 8px 14px;
+  }
+  button:hover { border-color: var(--muted); }
+  .step { padding: 4px 12px; line-height: 1; font-size: 18px; }
+
+  .picker { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .pick.wide { flex: 1 1 auto; }
+  .pick.ghost { color: var(--muted); }
+  .pick[aria-pressed="true"] {
+    background: var(--hook-bg); border-color: var(--hook); color: var(--hook); font-weight: 600;
+  }
+  .pick[aria-pressed="true"][data-rule="2"] {
+    background: var(--direct-bg); border-color: var(--direct); color: var(--direct);
+  }
+  .pick[aria-pressed="true"][data-rule="none"],
+  .pick[aria-pressed="true"][data-rule="unclear"] {
+    background: var(--neutral-chip); border-color: var(--line-strong); color: var(--ink);
+  }
+
+  .note {
+    font: inherit; width: 100%; margin-top: 10px; padding: 9px 12px;
+    border: 1px solid var(--line); border-radius: 9px;
+    background: var(--ground); color: var(--ink);
+  }
+
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--surface); border-top: 1px solid var(--line);
+    padding: 12px 20px; display: flex; align-items: center; gap: 14px;
+    justify-content: center; flex-wrap: wrap;
+    box-shadow: 0 -8px 24px -20px rgba(0, 0, 0, .6);
+  }
+  .bar .progress { color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .bar .primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+
+  dialog {
+    border: 1px solid var(--line-strong); border-radius: 14px; padding: 0;
+    background: var(--surface); color: var(--ink);
+    max-width: min(720px, 92vw); box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .45); }
+  .sheet { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .sheet h2 { margin: 0; font-size: 18px; }
+  .sheet p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .sheet textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; width: 100%; height: 46vh; resize: vertical;
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    background: var(--ground); color: var(--ink);
+  }
+  .sheet .row { display: flex; gap: 8px; justify-content: flex-end; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>{{road}}　面向{{facing}}</h1>
+    <p class="lede">沿途 <b>{{total}}</b> 個有左轉動線的路口，其中 <b>{{withimages}}</b> 個有街景影像、
+      <b>{{noimages}}</b> 個沒有、<b>{{settled}}</b> 個已實地確認。
+      順序就是騎過去會遇到的順序。產生於 {{generated}}（{{offline}}）。</p>
+  </header>
+
+  <p class="warn">判讀結果<b>不是實地查核</b>。證據強弱是「實地查核 &gt; 官方 &gt; 影像查核」，
+    所以這裡點的東西不會蓋掉官方資料 —— 跟官方不一致的會進複查清單，等你騎過去看牌子才算數。
+    照片裡同時有「左轉專用道箭頭」和「待轉區方框」時，機車看的是待轉區。
+    圓形藍底、機車配左箭頭與直行箭頭的牌子代表<b>待轉</b>，那兩個箭頭是同一個動作的兩階段。</p>
+
+  {{cards}}
+</div>
+
+<div class="bar">
+  <span class="progress"></span>
+  <button type="button" class="primary" id="export">匯出 JSON</button>
+  <button type="button" id="reset">清空這一頁的判讀</button>
+</div>
+
+<dialog id="sheet">
+  <div class="sheet">
+    <h2>匯出結果</h2>
+    <p>存成 <code>.json</code> 後執行 <code>python apply_image_checks.py &lt;檔名&gt;</code>。
+      判讀紀錄留在這台瀏覽器裡，關掉頁面不會不見。</p>
+    <textarea id="payload" spellcheck="false" readonly></textarea>
+    <div class="row">
+      <button type="button" id="copy">複製</button>
+      <button type="button" id="download" class="primary">下載檔案</button>
+      <button type="button" id="close">關閉</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  "use strict";
+
+  const STORAGE_KEY = "{{storagekey}}";
+  const CORRIDOR = "{{road}}";
+  const FACING = "{{facing}}";
+  const GENERATED = "{{generated}}";
+
+  const cards = Array.from(document.querySelectorAll(".card"));
+  // 判讀紀錄存在 localStorage 裡。一條廊道判到一半會被打斷是常態，
+  // 而重開頁面就從頭來過的工具，第二次沒有人會想用。
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch (e) { saved = {}; }
+
+  const keyOf = (card) => card.dataset.junction + "|" + card.dataset.facing;
+
+  function persist() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch (e) { /* 無痕模式 */ }
+    const done = cards.filter((c) => saved[keyOf(c)]).length;
+    document.querySelector(".progress").textContent = `已判 ${done} / ${cards.length}`;
+  }
+
+  function showFrame(card, index) {
+    const frames = Array.from(card.querySelectorAll(".frame"));
+    const strip = card.querySelector(".strip");
+    if (!frames.length) {
+      strip.classList.add("hidden");
+      return;
+    }
+    const at = (index + frames.length) % frames.length;
+    frames.forEach((f, n) => { f.hidden = n !== at; });
+    card.dataset.frame = String(at);
+    card.querySelector(".counter").textContent = `${at + 1} / ${frames.length}`;
+    strip.classList.toggle("single", frames.length < 2);
+  }
+
+  function paint(card) {
+    const record = saved[keyOf(card)];
+    card.classList.toggle("done", Boolean(record));
+    card.querySelectorAll(".pick").forEach((b) => {
+      b.setAttribute("aria-pressed", String(Boolean(record) && b.dataset.rule === record.choice));
+    });
+    if (record && record.note !== undefined) card.querySelector(".note").value = record.note;
+  }
+
+  // 圖載不出來時把框換成一句話。最常見的原因是這個 HTML 被搬離了
+  // corridor_images/ 旁邊，或是在不能解析相對路徑的檢視器裡開啟。
+  document.querySelectorAll(".frame img").forEach((img) => {
+    img.addEventListener("error", () => {
+      if (img.dataset.failed) return;
+      img.dataset.failed = "1";
+      const box = document.createElement("div");
+      box.className = "broken";
+      box.textContent = img.src.startsWith("data:")
+        ? "這張影像壞了，用 --refetch 重產一次。"
+        : "影像載不進來。這個檔要跟 corridor_images/ 放在一起，"
+          + "或用 python make_corridor_page.py <路名> --serve 起本機伺服器開。";
+      img.replaceWith(box);
+    });
+  });
+
+  cards.forEach((card) => {
+    showFrame(card, 0);
+    paint(card);
+
+    card.querySelectorAll(".step").forEach((button) => {
+      button.addEventListener("click", () => {
+        showFrame(card, Number(card.dataset.frame || 0) + Number(button.dataset.step));
+      });
+    });
+
+    card.querySelectorAll(".pick").forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = keyOf(card);
+        const choice = button.dataset.rule;
+        if (saved[key] && saved[key].choice === choice) {
+          delete saved[key];               // 再按一次就是取消
+        } else {
+          const frame = card.querySelector(".frame:not([hidden])");
+          saved[key] = {
+            junction: card.dataset.junction,
+            facing: Number(card.dataset.facing),
+            current: Number(card.dataset.current),
+            choice: choice,
+            note: card.querySelector(".note").value.trim(),
+            image_id: frame ? frame.dataset.id : null,
+            captured_on: frame ? frame.dataset.captured : null,
+          };
+        }
+        paint(card);
+        persist();
+      });
+    });
+
+    card.querySelector(".note").addEventListener("input", (event) => {
+      const record = saved[keyOf(card)];
+      if (record) { record.note = event.target.value.trim(); persist(); }
+    });
+  });
+
+  function payload() {
+    const checks = [];
+    cards.forEach((card) => {
+      const record = saved[keyOf(card)];
+      // 「看不出來」不匯出。它記錄的是「這張照片沒有答案」，不是一項證據 ——
+      // 寫進去只會讓下游多一種要濾掉的狀態。
+      if (!record || record.choice === "unclear") return;
+      const rule = record.choice === "none"
+        ? { approach_bearing: record.facing, exists: false }
+        : { approach_bearing: record.facing, turn_rule: Number(record.choice) };
+      checks.push({
+        junction_text: record.junction,
+        checked_on: GENERATED,
+        source: record.image_id
+          ? `影像查核（Mapillary ${record.image_id}，攝於 ${record.captured_on}）`
+          : "影像查核（無影像）",
+        note: record.note || "",
+        evidence: {
+          kind: "image",
+          provider: "mapillary",
+          image_id: record.image_id,
+          captured_on: record.captured_on,
+          corridor: CORRIDOR,
+          facing: record.facing,
+          said_before: record.current,
+        },
+        rules: [rule],
+      });
+    });
+    // 鍵名刻意是 image_checks 而不是 checks：field_checks.json 裡的 checks 是
+    // 實地查核，權威高於官方資料。影像判讀不是那個東西，不該長得可以互換。
+    return { tool: "make_corridor_page", corridor: CORRIDOR, facing: FACING,
+             judged_on: GENERATED, image_checks: checks };
+  }
+
+  const sheet = document.getElementById("sheet");
+  const area = document.getElementById("payload");
+
+  document.getElementById("export").addEventListener("click", () => {
+    area.value = JSON.stringify(payload(), null, 2);
+    sheet.showModal();
+  });
+  document.getElementById("close").addEventListener("click", () => sheet.close());
+  document.getElementById("copy").addEventListener("click", async () => {
+    const button = document.getElementById("copy");
+    try {
+      await navigator.clipboard.writeText(area.value);
+      button.textContent = "已複製";
+    } catch (e) {
+      // file:// 下 clipboard API 常常被擋。選起來讓人自己按 Ctrl+C 是可靠的退路。
+      area.removeAttribute("readonly"); area.select(); button.textContent = "請按 Ctrl+C";
+    }
+    setTimeout(() => { button.textContent = "複製"; }, 2500);
+  });
+  document.getElementById("download").addEventListener("click", () => {
+    const blob = new Blob([area.value], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `image_checks_${CORRIDOR}_${FACING}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+  document.getElementById("reset").addEventListener("click", () => {
+    if (!confirm("清空這一頁所有判讀？")) return;
+    saved = {};
+    cards.forEach(paint);
+    persist();
+  });
+
+  persist();
+</script>

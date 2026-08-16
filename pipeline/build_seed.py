@@ -92,6 +92,9 @@ TODAY_YEAR = 2026
 
 TURN_UNKNOWN, TURN_HOOK, TURN_DIRECT = 0, 1, 2
 
+# 給人看的 CSV 用。複查清單是拿去騎車的，寫「1」不寫「待轉」等於逼人邊騎邊查表。
+TURN_LABEL = {0: "中性播報", 1: "待轉", 2: "直接左轉", 3: "內側專用道", 4: "外側專用道"}
+
 # 台北市的預設左轉規則（ADR-0004）。依交通局說明：二車道道路原則上開放機車
 # 直接左轉，三車道以上原則上須待轉、個案檢討才免待轉。rules 表存的是那些個案例外。
 #
@@ -229,10 +232,35 @@ def load_field_checks() -> dict[tuple[str, float], dict]:
     return out
 
 
+def load_image_checks() -> dict[tuple[str, float], dict]:
+    """影像判讀結果，鍵同上。**這些不會改動任何規則。**
+
+    證據覆蓋順序是「實地查核 > 官方 > 影像查核」，所以一張街景照片說的話不足以
+    蓋掉官方清冊。它能做的是**指出兩者不一致**，讓那個路口排進實地查核的優先序 ——
+    街景判讀的天花板在資訊本身（現場常同時有左轉專用道箭頭與待轉標誌，照片分不出
+    那條車道是給汽車還是機車），當矛盾偵測器才是它的正確用法。
+    """
+    if not FIELD_CHECKS.exists():
+        return {}
+    data = json.loads(FIELD_CHECKS.read_text(encoding="utf-8"))
+    out: dict[tuple[str, float], dict] = {}
+    for check in data.get("image_checks", []):
+        for rule in check.get("rules", []):
+            out[(check["junction_text"], float(rule["approach_bearing"]))] = {
+                **rule,
+                "checked_on": check.get("checked_on"),
+                "note": check.get("note"),
+                "evidence": check.get("evidence", {}),
+            }
+    return out
+
+
 def main() -> int:
     rules = json.loads((BUILD / "rules_raw.json").read_text(encoding="utf-8"))
     junctions = json.loads((BUILD / "junctions.json").read_text(encoding="utf-8"))
     field = load_field_checks()
+    image_checks = load_image_checks()
+    image_agree, image_conflicts = 0, []
 
     SEED.unlink(missing_ok=True)
     db = sqlite3.connect(SEED)
@@ -288,6 +316,32 @@ def main() -> int:
             turn_rule, downgrade = TURN_UNKNOWN, f"離開方向為機車禁行路段：{blocker}"
             downgraded.append({"district": r["region"], "junction": r["junction_text"],
                                "bearing": r["exit_bearing"], "blocker": blocker})
+
+        # 影像判讀只做比對，不動 turn_rule。不一致的進複查清單由人決定 ——
+        # 讓一張照片自動改掉規則，等於把 29% 一致率的判讀變成權威資料。
+        seen_in_image = image_checks.get((r["junction_text"], float(r["approach_bearing"])))
+        if seen_in_image:
+            saw = None if seen_in_image.get("exists") is False else seen_in_image.get("turn_rule")
+            if saw == turn_rule:
+                image_agree += 1
+            else:
+                image_conflicts.append({
+                    "district": r["region"],
+                    "junction_text": r["junction_text"],
+                    "approach_bearing": f"{r['approach_bearing']:.0f}",
+                    "entry_road_name": entry_name,
+                    "exit_road_name": exit_name,
+                    "lat": j["lat"],
+                    "lon": j["lon"],
+                    # 幾何實際方位角。複查清單要用它跟 rules 表對得起來 ——
+                    # 同一個路口同一條進入道路會有兩個來向，只用座標配對會兩條都中。
+                    "approach": approach,
+                    "we_say": TURN_LABEL.get(turn_rule, "?"),
+                    "image_says": "無左轉動線" if saw is None else TURN_LABEL.get(saw, "?"),
+                    "captured_on": (seen_in_image.get("evidence") or {}).get("captured_on", ""),
+                    "note": seen_in_image.get("note") or "",
+                    "map": f"https://www.google.com/maps?q={j['lat']},{j['lon']}",
+                })
 
         db.execute(
             "INSERT INTO rules (lat, lon, cell, approach_bearing, exit_bearing, turn_rule,"
@@ -374,6 +428,17 @@ def main() -> int:
             w.writeheader()
             w.writerows(needs_review)
 
+    # 複查清單。空的時候也要寫（覆蓋掉上一輪的內容）—— 留著一份過期的不一致清單，
+    # 會讓人騎去一個已經解決的路口。
+    conflicts_path = BUILD / "image_conflicts.csv"
+    fields = ["district", "junction_text", "approach_bearing", "approach", "entry_road_name",
+              "exit_road_name", "lat", "lon", "we_say", "image_says", "captured_on",
+              "note", "map"]
+    with open(conflicts_path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(image_conflicts)
+
     total_rules = len(rules)
     print(f"種子資料庫  {SEED}")
     print(f"  規則      {inserted}/{total_rules} 筆寫入")
@@ -388,6 +453,11 @@ def main() -> int:
     print(f"  執法點位  {enforcement_count} 筆")
     print(f"  降級規則  {len(downgraded)} 筆（離開方向為機車禁行路段）")
     print(f"  實地查核  {verified} 筆（信心 100，蓋過自動推導），新增 {added} 筆")
+    print(f"  影像判讀  一致 {image_agree} 筆、不一致 {len(image_conflicts)} 筆"
+          f"（不改規則）-> build/image_conflicts.csv")
+    for c in image_conflicts:
+        print(f"    {c['district']} {c['junction_text']} 面向 {c['approach_bearing']}°："
+              f"我們說 {c['we_say']}，影像看起來是 {c['image_says']}")
     for d in downgraded:
         print(f"    {d['district']} {d['junction']}  {d['bearing']:.0f}° -> {d['blocker']}")
     db.close()

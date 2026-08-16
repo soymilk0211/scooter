@@ -33,7 +33,8 @@ OUT = BUILD / "streetview_classification.json"
 CGU_BASE = "https://air.cgu.edu.tw/cgullmapi/v1"
 MODEL = "gpt-4o"
 
-MAPILLARY_FIELDS = "id,captured_at,compass_angle,is_pano,thumb_2048_url,computed_geometry"
+MAPILLARY_FIELDS = ("id,captured_at,compass_angle,computed_compass_angle,is_pano,"
+                    "thumb_2048_url,computed_geometry")
 SEARCH_RADIUS_M = 45.0
 
 # 相機朝向分組。規則掛在進入方位角上，所以每個方位要各判一次。
@@ -149,15 +150,28 @@ def mapillary_bbox(lat: float, lon: float) -> str:
     return f"{lon - dlon},{lat - dlat},{lon + dlon},{lat + dlat}"
 
 
+def heading_of(image: dict) -> float | None:
+    """影像的朝向。
+
+    **computed_compass_angle 優先。** `compass_angle` 是上傳裝置寫的，沒有羅盤
+    資料時填 0 —— 而 0 與「正北」無法區分。實測台北某路口的 86 張影像那一欄
+    全部是 0，全部會被分進「北」這個方位，於是每個方向都拿到同一批照片。
+    """
+    computed = image.get("computed_compass_angle")
+    if computed is not None:
+        return float(computed)
+    raw = image.get("compass_angle")
+    return float(raw) if raw else None
+
+
 def pick_per_sector(images: list[dict]) -> dict[str, dict]:
     """每個方位取最新的一張。全景優先 —— 全景能一次看到路口各側的標誌。"""
     best: dict[str, dict] = {}
     for image in images:
-        angle = image.get("compass_angle")
+        angle = heading_of(image)
         if angle is None or not image.get("thumb_2048_url"):
             continue
-        sector = min(SECTORS, key=lambda s: geo.axis_delta(s, angle) if False else
-                     abs((s - angle + 540) % 360 - 180))
+        sector = min(SECTORS, key=lambda s: abs((s - angle + 540) % 360 - 180))
         label = SECTORS[sector]
         current = best.get(label)
         score = (bool(image.get("is_pano")), image.get("captured_at") or 0)
