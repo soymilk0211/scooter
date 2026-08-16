@@ -1,8 +1,18 @@
 # 交接文件
 
-台灣機車待轉警示 App。**先讀 [CONTEXT.md](CONTEXT.md)（術語）與 [docs/adr/](docs/adr/)（六份決策紀錄）**，本文件只講現況與尚未解決的事。
+台灣機車導航 App，差異化在待轉與禁行機車。**先讀 [CONTEXT.md](CONTEXT.md)（術語）與
+[docs/adr/](docs/adr/)（八份決策紀錄，**0007 與 0008 是最新也最重要的兩份**）**，
+本文件只講現況與尚未解決的事。
 
-日期：2026-08-15
+日期：2026-08-16
+
+> **⚠ 產品定位在 2026-08-16 變了。** 先前是「警示外掛，不做導航」；
+> [ADR-0007](docs/adr/0007-navigation-app-for-taiwan-scooters.md) 之後**本 App 就是導航 App**，
+> 正面對決 Google Maps。原因：騎士照 Google Maps 騎，我們看不到他的路線，
+> 所以沒有目的地就永遠不知道左轉意圖，而從 GPS 推意圖在物理上不成立
+> （等軌跡看得出在轉，已經在轉了，而警示要在 300 公尺前發）。
+> 本文件下面第二節「App 現況」描述的仍是舊範圍的實作成果，那些沒有白做，
+> 但**閱讀時要知道範圍已經擴大**。
 
 ---
 
@@ -28,29 +38,38 @@ JAVA_HOME=/c/Users/user/Android/jdk/jdk-21.0.12+8 ANDROID_HOME=C:/Users/user/And
 
 **踩過的坑**：`adb shell` 的輸出在 Git Bash 裡會遺失，用 PowerShell 呼叫 `adb.exe` 才收得到。模擬器啟動後若沒正常關閉，`qemu-system-x86_64-headless` 會殘留並霸佔 `emulator-5554`，導致新開的模擬器連不上 —— 症狀是 `adb devices` 看得到裝置但 `getprop` 永遠沒回應。
 
-**2026-08-15：模擬器完全開不起來，而且不是上面那個殘留問題。** 開始前 5554 是乾淨的。
+### 模擬器：能開，但只有一組指令能開
 
-症狀（每一次都一樣）：`adb devices` 看得到裝置，但 `adb shell` 與 `adb logcat` 永遠不回應，
-而 **qemu 行程的 CPU 時間完全靜止**（15–20 秒內 delta 為 0），駐留記憶體 1.6 GB ——
-是凍結，不是開機慢。凍結前累積的 CPU 時間每次不同（23 / 30 / 67 / 259 秒），所以是開到一半才卡。
+**這行是可用的，實測 45 秒開機**：
 
-**已排除的假設**：
+```bash
+emulator -avd scooter -gpu host -no-audio -no-boot-anim -accel on
+```
 
-| 假設 | 怎麼試的 | 結果 |
-| --- | --- | --- |
-| 快照或開機模式 | 快照載入、`-no-snapshot-load`、`-no-snapshot` | 三種都凍結 |
-| GPU | 加 `-gpu swiftshader_indirect` | 仍凍結 |
-| Hyper-V／WSL2 搶 WHPX | `docker desktop stop` + `wsl --shutdown`，確認 `vmmem` 消失後再開 | **仍凍結**（Docker 當時零容器） |
-| AVD 影像被硬砍壞掉 | 用 `avdmanager` 另建全新 AVD（android-34 google_apis x86_64）開機 | **仍凍結**（跑最遠的一次，259 秒 CPU） |
-| 磁碟或記憶體不足 | C 槽剩 48 GB、實體記憶體剩 17 GB | 不是 |
+**2026-08-16 花了大半個工作階段追一個假問題，結論記在這裡免得重蹈。** 症狀是
+`adb devices` 看得到裝置但 `adb shell` 永遠不回應、qemu 的 CPU 時間完全靜止。
+我依序排除了快照模式、GPU 模式、Hyper-V／WSL2 搶 WHPX（關掉 Docker 再試）、
+AVD 影像損壞（另建全新 AVD）、磁碟與記憶體 —— **全部都不是**。
 
-**沒排除的**：emulator 37.1.11 對上 Windows 11 build **26200**（Insider 線）。`-accel-check` 回報
-`WHPX(10.0.26200) is installed and usable`；VBS 狀態為 running，但 HVCI 與 Credential Guard
-都沒開（`SecurityServicesRunning: 0`），這是裝了 Hyper-V 後的正常狀態，不像是元凶。
-下一步該試的是**換 emulator 版本**（升級或退到 35.x），而不是繼續動系統設定。
+**真正的原因是上一段那個殘留行程，而我的清理指令抓不到它。**
+`Get-Process qemu-system-x86_64,emulator,adb` **比對不到 `qemu-system-x86_64-headless`**，
+那是**不同的行程名**。我用 `-no-window` 試過一次之後留下一個 headless 實例霸佔 5554，
+之後每一次「乾淨的」啟動其實都在跟那個卡死的舊實例講話。
 
-這台機器上 adb 呼叫一定要用 `Start-Job` + `Wait-Job -Timeout` 包起來，否則卡住的 `adb shell`
-會把整個工作階段拖死。`$env:LOCALAPPDATA\Temp\AndroidEmulator\` 下有 `emu-crash-*.db` 可查。
+所以：
+
+- 清理**一定**要用萬用字元：`Get-Process -Name 'qemu-system*'`，別列舉行程名。
+- 關閉優先用 `adb emu kill`，再補 `Stop-Process`。
+- 開之前先確認 `Get-Process -Name 'qemu-system*'` 是空的。
+- adb 呼叫一律用 `Start-Job` + `Wait-Job -Timeout` 包起來，否則卡住的 `adb shell`
+  會把整個工作階段拖死。
+
+**不要動 AVD 的 `hw.gpu.enabled`。** 我一度把它從 `no` 改成 `yes` 以為那是病因，
+其實原設定沒問題（`-gpu host` 走命令列指定即可），已還原，備份留在
+`config.ini.bak-before-gpu-fix`。
+
+啟動失敗時 emulator 會跳一個**強制回應的 crash 對話框**；若視窗是最小化或隱藏的，
+它會看起來像「凍結在 0% CPU」。用 `-no-metrics`，或把視窗開出來看。
 
 祕密放在 `pipeline/.env`（已 gitignore）：`MAPILLARY_TOKEN`、`CGU_API_KEY`。
 
@@ -64,16 +83,41 @@ JAVA_HOME=/c/Users/user/Android/jdk/jdk-21.0.12+8 ANDROID_HOME=C:/Users/user/And
 - 定位前景服務（`location` + `mediaPlayback`）
 - **警示引擎**：距離 300 m、方位角 ±30°、速度 > 15 km/h、生效時段、5 分鐘冷卻、依剩餘時間排序取唯一一則
 - **語音**：首次啟動預合成五句話成 wav，播報時放本機檔（即時 TTS 首句延遲實測 2.8–3.6 秒，路口等不起）；`USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`
-- **語音失效警告**（2026-08-15 完成，**尚未在裝置上跑過**，見下節）
+- **語音失效警告**（2026-08-15，**2026-08-16 已在模擬器上實測通過**，見下節）
+- **極簡底圖深淺兩色**（2026-08-16，已實測；切換設定即時換皮）
 - 種子資料庫內附於 APK，首次啟動複製到可寫位置
 
 **32 項單元測試全綠**（core-rules 19、app 13），`./gradlew build` 通過，APK 53 MB。
 
+### 2026-08-16 在模擬器上實測通過的項目
+
+| 項目 | 怎麼驗的 |
+| --- | --- |
+| 深色底圖 | `MapCanvas: style loaded dark=true` |
+| 淺色底圖 | `style loaded dark=false` |
+| 執行中即時換皮 | 切設定就換，不用重開（這條 `LaunchedEffect` 沒有單元測試蓋到） |
+| 語音警告 `NO_ENGINE` | `pm disable-user com.google.android.tts` 後跳紅色警告，且只給「語音設定／重新檢查」 |
+| 重新檢查 | `pm enable` 後按下去，警告自己消失 |
+| 版面 | 警告列把回報列往下推，沒有雙倍狀態列間距 |
+| 崩潰 | `AndroidRuntime:E` 全空 |
+
+### ⚠ 底圖現在用的來源不能上線
+
+2026-08-16 換上的 CARTO（Positron／Dark Matter）**是借用的**。
+[官方文件](https://docs.carto.com/faqs/carto-basemaps)載明 tile 服務僅供 enterprise 與非營利補助，
+免費額度 75,000 mapviews/月，**不供公開免費使用**。
+[ADR-0008](docs/adr/0008-per-city-offline-packs-and-no-backend.md) 已決定改成自建向量圖磚
+（Planetiler，OSM／ODbL），**配色設計可以沿用**（CARTO 的 style 是另行開放授權的），
+換掉的只是誰的機器在送圖。這件事在路線圖第 5 項。
+
 **尚未實作**：
 
-- **懸浮視窗**（`SYSTEM_ALERT_WINDOW`）—— 騎士切到 Google Maps 後唯一的視覺通道，這是下一件該做的
+- 導航整條（ADR-0007 之後這是最大的一塊）：地址搜尋、路線、逐向指示
 - Valhalla 與 App 的整合（圖磚已驗證 309 MB，但還沒放進 App）
-- 資料同步（diff 發布）、後端、被動觀察偵測、騎乘前檢查（ROM 背景清殺偵測）
+- 測速照相（`EnforcementKind.FIXED_SPEED_CAMERA = 1` **已定義但從沒用過**，
+  現有 29 筆全是 `kind=2` 科技執法且 `speed_limit` 全空）
+- 懸浮視窗（`SYSTEM_ALERT_WINDOW`）、資料同步（diff 發布）、被動觀察偵測、
+  騎乘前檢查（ROM 背景清殺偵測）
 
 **從未在真機上跑過。** 使用者只有 iPhone，正在找二手 Android。模擬器驗證不了 GPS 精度、廠牌 ROM 清殺、太陽下的過熱。
 
@@ -187,20 +231,79 @@ cp build/scooter_seed.db ../app/src/main/assets/
 
 **OSM 的 `motorcycle` 標籤不可信**：復北地下道實際禁行機車，OSM 標成 `motorcycle=yes`。全台北只有 221 條路標了 `motorcycle=no`。改用結構性判定（`tunnel`／`bridge`／`layer` 加名稱關鍵字）。
 
+**路名是「臺」不是「台」**：查 `台灣大道` 只回一段，OSM 用的是 **`臺灣大道`**。
+台北的資料剛好沒踩到，台中會整批對不上。路名比對**必須先正規化臺/台**。
+
+**OSM 沒有車道級資料，這是硬事實**（2026-08-16 實測台中主要幹道 `primary|secondary|trunk`，**1,191 段**）：
+
+| 標籤 | 覆蓋 | 用途 |
+| --- | --- | --- |
+| `oneway` | 98% | 單行道 |
+| `lanes` | 39% | 車道總數 |
+| `maxspeed` | 35% | 速限 |
+| `motorcycle` | 9% | 禁行機車（有標也不可信，見上） |
+| `lanes:forward` | 6% | 單向車道數 |
+| **`turn:lanes`** | **1%** | **哪條車道往哪轉** |
+| `motorcycle:lanes` | **0%** | 車道級禁行機車 |
+
+也就是說「高德那種車道指引畫面」在台灣**不是工程量大，是沒有資料**。
+要做等於全台每個路口手工建車道幾何，比待轉建檔大一到兩個數量級。
+這就是為什麼路線圖把車道級定成「只在建過檔的廊道上有」，規模化交給被動觀察。
+
 **兩段式左轉標誌有兩種**：圓形藍底畫機車配左箭頭與直行箭頭（那兩個箭頭是同一動作的兩階段，不是「可左轉也可直行」——我判讀錯過一次，錯在危險方向）；直式長方形紅底白字寫「前方路口機車兩段左轉」。
 
 ---
 
-## 七、待決事項
+## 七、路線圖（2026-08-16 設計訪談後定案）
 
-1. **懸浮視窗**要不要現在做（下一步的預設選項；語音警告做完後，它是最後一個視覺缺口）
-2. ~~語音不可用的警告畫面~~ —— 2026-08-15 完成，但**還沒在任何裝置上看過**
-3. **模擬器凍結**（見第一節，已排除五個假設）。在它修好之前，任何 UI 改動都只有單元測試蓋得到 ——
-   下一步建議換 emulator 版本試，別再動系統設定
-4. 街景判讀要不要改成每週矛盾偵測，還是整個擱置
-5. 19 個待補座標的路口要人工處理（`pipeline/build/review_coords.csv`）
-6. 實地查核清單還有 30 餘筆高優先（`pipeline/build/ride_check.csv`，按風險排序：說「直接左轉」而現場要待轉會吃罰單）
-7. Play Console：新個人帳號需 **12 位測試者連續 14 天**才能上架，那 12 人必須是 Android 使用者
+十輪設計訪談的產出。**順序是談定的，不要自己重排** —— 第 2 項刻意提前，
+因為那是唯一會卡住使用者的東西，工具一出來他就能開始判資料，其他項可以並行。
+
+| # | 項目 | 內容 |
+| --- | --- | --- |
+| 1 | **Bug 批次** | 抽屜 `gesturesEnabled = false`（拉地圖會把抽屜拉出來）；**滾輪改成縮放**（現在是上下平移）；設定用 `DataStore` 落地（外觀與「背景音量衰減」現在寫成 `remember`，重開就還原） |
+| 2 | **影像判讀工具** | 產廊道 HTML 頁：一條路一個方向，每個有左轉動線的路口一張 Mapillary 影像 + 經緯度 + 面向角度，使用者點選規則，匯出 JSON 回填 `field_checks.json`。**不可發布成 Artifact**（CSP 擋外部主機，圖載不進來），存本機檔用瀏覽器開 |
+| 3 | **測速照相 + 時速圓圈** | 可拖曳的時速圓圈（先做 App 內，元件寫成與畫面無關以便日後搬進懸浮視窗）；接 [測速執法設置點](https://data.gov.tw/dataset/7320)（含經緯度、速限、**拍攝方向**）；**排除國道與快速道路**（ADR-0006 白牌禁行）；`enforcement_sections` 空表先建好 |
+| 4 | **各縣市結構** | `TAIPEI_DEFAULTS` 改成以縣市為鍵的登錄表；**修正 §99 法源推導**（見下）；**臺/台 正規化**；`districts.py` 的 bbox 參數化 |
+| 5 | **導航** | 地址／POI（離線、分縣市）、路線、Google 分享連結帶入目的地、分縣市離線包。最大一包 |
+
+### 訪談中定案、但散落在各處的決定
+
+- **證據覆蓋順序**：實地查核 > 官方 > 影像查核（依影像年份遞減）> 回報共識 > 觀察。
+  衝突時**不自動覆蓋**，進複查清單由人決定（`field_checks.json` 的 `recheck` 欄位已存在）。
+- **警示時窗**（已寫進 `CONTEXT.md`）：剛性（轉向指示）不動，彈性（測速）往前讓。
+  不用「延後低優先度」，那會讓騎士錯過路口。
+- **測速播報**：一律播並含速限；**超速且有測速照相時加播「您已超速」**。
+  「現在有沒有超速」由時速圓圈用顏色表達，不佔語音通道。
+- **語音兩條路**：待轉警示走預合成 wav（有硬期限），導航指示走即時 TTS。
+  副作用是導航一直在講話會讓 TTS 引擎保持熱的，原本 2.8–3.6 秒的冷啟動延遲會消失。
+- **UI**：抄高德的**資訊**（哪條車道、前方待轉），不抄它的**畫法**（3D、漸層、多色）。
+  只在接近路口那幾秒展開車道畫面。`Theme.kt` 的「陽光下看得清楚比好看重要」仍然有效。
+- **賺錢**：神盾模式 —— 廣告綁在**下載縣市離線包**與**手動更新資料庫**兩個動作上，
+  騎乘中永遠不出廣告。第一版全部免費（護城河是資料，先收錢會同時擋住用戶和資料）。
+- **車道級資料**：先只在建過檔的廊道上有，全台追平是長期目標；規模化靠被動觀察，
+  手工建檔是冷啟動用的。別人的行車紀錄器**一律導去 Mapillary**，不自建管線。
+- **路口監視器**：只用來看**行為**（機車實際待轉還是直接轉），不用來判讀標誌 ——
+  判讀標誌實測只有 29%，天花板在資訊本身。且只當**查核優先序工具**，不當資料來源。
+
+### 明確延後（不是忘記）
+
+1. **區間測速** —— 使用者明說**上線前一定要加回去**。schema 位子這次先留好（`enforcement_sections`），
+   實作延後。它是**狀態**不是接近事件，硬塞進點模型只會在起點響一次。
+2. **群眾影像判讀的信任模型** —— 回報者有 GPS 證明他在現場，影像判讀者在家裡，沒有東西可驗證。
+   不能沿用回報的信任模型（信用分數）。做 App 內判讀前必須先解這題。
+3. 監視器影片行為分析、即時路況與 ETA、懸浮視窗、街景每週矛盾偵測。
+4. 19 個待補座標的路口（`pipeline/build/review_coords.csv`）。
+5. 實地查核清單 30 餘筆高優先（`pipeline/build/ride_check.csv`）。
+6. Play Console：新個人帳號需 **12 位測試者連續 14 天**才能上架，那 12 人必須是 Android 使用者。
+
+### §99 的法源錯誤（第 4 項要修的）
+
+現行 `TAIPEI_DEFAULTS` 是「3 車道以上 → 待轉」。但
+[道路交通安全規則 §99](https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=K0040013&flno=99)
+的「三快車道以上」**限定單行道**；一般道路強制待轉的觸發條件是**內側車道禁行機車**或標誌。
+在台北實務上剛好幾乎都對（3 車道以上內側幾乎都禁行機車），但這個推導**換一個城市就不成立**，
+所以加城市之前必須先修，否則每加一個就複製一次同樣的錯。
 
 ---
 
