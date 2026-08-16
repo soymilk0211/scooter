@@ -23,7 +23,7 @@ SEED = BUILD / "scooter_seed.db"
 
 # 必須與 data/src/main/kotlin/tw/scooter/data/Schema.kt 保持一致。
 # 兩邊都改到才算改完 —— 結構不一致時 App 會在讀取種子檔時炸開。
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 CELL_DEGREES = 0.01  # 與 core-rules 的 Grid.CELL_DEGREES 相同
 
 CREATE = [
@@ -72,6 +72,25 @@ CREATE = [
         updated_at  INTEGER NOT NULL
     )""",
     "CREATE INDEX idx_enforcement_cell ON enforcement_points(cell)",
+    # 區間測速。**這一版刻意留空**，位子先留好（見 Schema.kt 的同一段註解）：
+    # 區間測速是狀態不是接近事件，用點模型只會在起點響一次然後沉默。
+    # 原始資料已由 import_enforcement.py 存進 enforcement_sections_raw.json。
+    """CREATE TABLE enforcement_sections (
+        id          INTEGER PRIMARY KEY,
+        start_lat   REAL    NOT NULL,
+        start_lon   REAL    NOT NULL,
+        start_cell  INTEGER NOT NULL,
+        end_lat     REAL    NOT NULL,
+        end_lon     REAL    NOT NULL,
+        end_cell    INTEGER NOT NULL,
+        bearing     REAL,
+        length_m    INTEGER,
+        speed_limit INTEGER,
+        description TEXT,
+        updated_at  INTEGER NOT NULL
+    )""",
+    "CREATE INDEX idx_sections_start ON enforcement_sections(start_cell)",
+    "CREATE INDEX idx_sections_end ON enforcement_sections(end_cell)",
     """CREATE TABLE observations (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
         lat              REAL    NOT NULL,
@@ -411,8 +430,10 @@ def main() -> int:
                 " description, updated_at) VALUES (?,?,?,?,?,?,?,?)",
                 (
                     p["lat"], p["lon"], cell_of(p["lat"], p["lon"]),
-                    None,  # 科技執法資料未提供取締方向，只能全向警示
-                    p["kind"], None,
+                    # 科技執法資料沒有取締方向，固定測速有（判得出來的話）。
+                    # None 代表不限方向，警示對所有來向發出。
+                    p.get("bearing"),
+                    p["kind"], p.get("speed_limit"),
                     p["location"] or p["name"],
                     0,
                 ),

@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import tw.scooter.rules.AlertCandidate
+import tw.scooter.rules.EnforcementCandidate
 import tw.scooter.rules.LatLon
 import tw.scooter.rules.RiderState
 import tw.scooter.rules.TrackBuffer
@@ -31,6 +32,25 @@ object RideRepository {
     /** 當前應播報的警示。語音尚未接上，UI 先直接顯示它以便驗證。 */
     private val _alert = MutableStateFlow<AlertCandidate?>(null)
     val alert: StateFlow<AlertCandidate?> = _alert.asStateFlow()
+
+    /** 最近一次的測速警示，供畫面顯示。 */
+    private val _enforcement = MutableStateFlow<EnforcementCandidate?>(null)
+    val enforcement: StateFlow<EnforcementCandidate?> = _enforcement.asStateFlow()
+
+    /**
+     * 時速圓圈用來上色的速限。null 代表這一帶沒有速限資料 —— 圓圈那時只顯示
+     * 速度、不評價。
+     */
+    private val _speedLimit = MutableStateFlow<Int?>(null)
+    val speedLimit: StateFlow<Int?> = _speedLimit.asStateFlow()
+
+    fun onEnforcement(candidate: EnforcementCandidate) {
+        _enforcement.value = candidate
+    }
+
+    fun onSpeedLimit(limitKmh: Int?) {
+        _speedLimit.value = limitKmh
+    }
 
     /**
      * 語音警示的可用狀態。這是本 App 唯一一個「壞掉時看不出來」的環節 ——

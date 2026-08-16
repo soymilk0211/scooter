@@ -22,7 +22,7 @@ object Schema {
     const val DATABASE_NAME = "scooter.db"
 
     /** 結構版本。與 meta 表中的 data_version（資料版本）是不同的東西。 */
-    const val SCHEMA_VERSION = 1
+    const val SCHEMA_VERSION = 2
 
     val CREATE: List<String> = listOf(
         """
@@ -93,6 +93,33 @@ object Schema {
         """.trimIndent(),
         "CREATE INDEX idx_enforcement_cell ON enforcement_points(cell)",
 
+        // 區間測速。**這一版刻意留空** —— 位子先留好，實作延後（使用者明說上線前
+        // 一定要加回去）。
+        //
+        // 它不能塞進 enforcement_points，因為區間測速是**狀態**不是接近事件：
+        // 騎士進入區間之後，接下來好幾公里的平均速度都在被計算。用點模型表達，
+        // 警示只會在起點響一次，然後在真正該提醒的那幾公里裡完全沉默。
+        // 所以這張表存的是頭尾兩點，兩端都建索引 —— 進入與離開都要偵測得到。
+        """
+        CREATE TABLE enforcement_sections (
+            id          INTEGER PRIMARY KEY,
+            start_lat   REAL    NOT NULL,
+            start_lon   REAL    NOT NULL,
+            start_cell  INTEGER NOT NULL,
+            end_lat     REAL    NOT NULL,
+            end_lon     REAL    NOT NULL,
+            end_cell    INTEGER NOT NULL,
+            -- 行進方位角。NULL 代表雙向都取締。
+            bearing     REAL,
+            length_m    INTEGER,
+            speed_limit INTEGER,
+            description TEXT,
+            updated_at  INTEGER NOT NULL
+        )
+        """.trimIndent(),
+        "CREATE INDEX idx_sections_start ON enforcement_sections(start_cell)",
+        "CREATE INDEX idx_sections_end ON enforcement_sections(end_cell)",
+
         // 本機待上傳的觀察與回報。上傳後保留一段時間供除錯，再由清理工作刪除。
         """
         CREATE TABLE observations (
@@ -128,6 +155,17 @@ object Schema {
         const val FIXED_SPEED_CAMERA = 1
         const val SMART_ENFORCEMENT = 2
     }
+
+    /**
+     * 由舊版升級的腳本，索引即為「從第幾版升上來」。
+     *
+     * 必須逐版累加，不得重建資料表 —— observations 內可能存有尚未上傳的回報，
+     * 而那些是騎士親手按下去的東西。
+     */
+    val MIGRATIONS: Map<Int, List<String>> = mapOf(
+        // 1 -> 2：新增區間測速的表。純粹新增，既有資料不動。
+        1 to CREATE.filter { it.contains("enforcement_sections") },
+    )
 
     object MetaKey {
         const val SCHEMA_VERSION = "schema_version"

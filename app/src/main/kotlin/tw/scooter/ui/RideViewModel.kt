@@ -40,6 +40,8 @@ data class RideUiState(
     val voiceStatus: VoiceStatus = VoiceStatus.CHECKING,
     /** 騎士已對**當前這個**狀態按過「知道了」。狀態一變就重新顯示。 */
     val voiceWarningDismissed: Boolean = false,
+    /** 時速圓圈用來上色的速限。null 代表這一帶沒有速限資料，圓圈就不評價。 */
+    val speedLimitKmh: Int? = null,
 ) {
     /** 回報按鈕僅在近乎靜止時解鎖 —— 門檻定義於 core-rules，UI 不自行設定。 */
     val reportUnlocked: Boolean
@@ -101,9 +103,33 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         ride,
         RideRepository.voiceStatus,
         dismissedVoiceStatus,
-    ) { base, voice, dismissed ->
-        base.copy(voiceStatus = voice, voiceWarningDismissed = dismissed == voice)
+        RideRepository.speedLimit,
+    ) { base, voice, dismissed, limit ->
+        base.copy(
+            voiceStatus = voice,
+            voiceWarningDismissed = dismissed == voice,
+            speedLimitKmh = limit,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RideUiState())
+
+    /**
+     * 拖曳中的圓圈位置。落地的那份在設定裡，這一份只在手指按著的時候有值 ——
+     * 每一幀都寫 DataStore 等於每一幀改寫一次檔案。
+     */
+    private val draggedDial = MutableStateFlow<DialPosition?>(null)
+
+    val dialPosition: StateFlow<DialPosition> = combine(settings, draggedDial) { saved, dragging ->
+        dragging ?: saved?.let { DialPosition(it.dialX, it.dialY) } ?: DialPosition.UNSET
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DialPosition.UNSET)
+
+    fun onDialMoved(position: DialPosition) {
+        draggedDial.value = position
+    }
+
+    fun onDialSettled(position: DialPosition) {
+        draggedDial.value = position
+        viewModelScope.launch { SettingsStore.setDialPosition(getApplication(), position.x, position.y) }
+    }
 
     /**
      * 執行騎士按下的補救動作。

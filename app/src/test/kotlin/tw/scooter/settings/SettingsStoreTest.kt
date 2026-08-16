@@ -2,9 +2,12 @@ package tw.scooter.settings
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import tw.scooter.ui.theme.AppearanceMode
 
@@ -41,6 +44,36 @@ class SettingsStoreTest {
         // 關掉的衰減每次重開都會自己打開，而騎士要到有背景音樂時才會發現。
         val stored = mutablePreferencesOf(booleanPreferencesKey("duck_others") to false)
         assertEquals(false, stored.toSettings().duckOthers)
+    }
+
+    @Test
+    fun `a dial that has never been dragged has no position`() {
+        // NaN 是「還沒拖過」的表示法，畫面據此決定用預設落點而不是 (0, 0) ——
+        // 左上角正好是狀態列與回報列的位置。
+        val fresh = emptyPreferences().toSettings()
+        assertTrue(fresh.dialX.isNaN() && fresh.dialY.isNaN())
+    }
+
+    @Test
+    fun `a dragged dial position comes back`() {
+        val stored = mutablePreferencesOf(
+            floatPreferencesKey("dial_x") to 120.5f,
+            floatPreferencesKey("dial_y") to 880f,
+        )
+        assertEquals(120.5f, stored.toSettings().dialX, 0.01f)
+        assertEquals(880f, stored.toSettings().dialY, 0.01f)
+    }
+
+    @Test
+    fun `a dial dragged to the very corner is not mistaken for unset`() {
+        // 0 是合法的位置（拖到最左上），不是「沒設定過」。讀成未設定會讓圓圈
+        // 每次重開都跳回預設落點。
+        val stored = mutablePreferencesOf(
+            floatPreferencesKey("dial_x") to 0f,
+            floatPreferencesKey("dial_y") to 0f,
+        )
+        assertEquals(0f, stored.toSettings().dialX, 0.001f)
+        assertFalse(stored.toSettings().dialX.isNaN())
     }
 
     @Test

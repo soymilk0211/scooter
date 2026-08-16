@@ -29,10 +29,15 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -44,7 +49,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import tw.scooter.ride.RideService
 import tw.scooter.ui.AlertBanner
+import tw.scooter.ui.DialPosition
 import tw.scooter.ui.MapCanvas
+import tw.scooter.ui.SpeedDial
 import tw.scooter.ui.MenuButton
 import tw.scooter.ui.ReportOutcome
 import tw.scooter.ui.RideViewModel
@@ -53,6 +60,17 @@ import tw.scooter.ui.TopReportBar
 import tw.scooter.ui.VoiceWarning
 import tw.scooter.ui.theme.ScooterTheme
 import tw.scooter.ui.theme.resolvesToDark
+
+/**
+ * 圓圈還沒被拖過時的落點：左側、離底部四分之一畫面高。
+ *
+ * 用畫面尺寸算而不是寫死 dp，是因為它必須跟著版面走 —— 底部中央是警示列，
+ * 右側留給之後的導航指示。
+ */
+private fun defaultDialPosition(canvas: IntSize) = DialPosition(
+    x = canvas.width * 0.06f,
+    y = canvas.height * 0.72f,
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,7 +158,12 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                 }
             },
         ) {
-            Box(Modifier.fillMaxSize()) {
+            var canvas by remember { mutableStateOf(IntSize.Zero) }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { canvas = it },
+            ) {
                 MapCanvas(Modifier.fillMaxSize(), dark = settings.appearance.resolvesToDark())
 
                 // 用 Column 讓選單按鈕自然排在回報列下方。先前用固定位移量去猜
@@ -174,6 +197,21 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                         modifier = Modifier
                             .then(if (state.inOverlayMode) Modifier.statusBarsPadding() else Modifier)
                             .padding(start = 12.dp, top = 4.dp),
+                    )
+                }
+
+                // 時速圓圈。第一次出現在左下角上方一點的位置 —— 右邊留給
+                // 導航指示（路線圖第 5 項），而底部中央是警示列的位置。
+                // 拖過之後就聽騎士的，那個位置存在設定裡。
+                val dial by viewModel.dialPosition.collectAsState()
+                if (canvas != IntSize.Zero) {
+                    SpeedDial(
+                        speedKmh = state.speedKmh,
+                        speedLimitKmh = state.speedLimitKmh,
+                        position = if (dial.isSet) dial else defaultDialPosition(canvas),
+                        onPositionChanged = viewModel::onDialMoved,
+                        onPositionSettled = viewModel::onDialSettled,
+                        bounds = canvas,
                     )
                 }
 

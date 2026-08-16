@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -21,12 +22,22 @@ import java.io.IOException
 data class Settings(
     val appearance: AppearanceMode = AppearanceMode.DARK,
     val duckOthers: Boolean = true,
+    /**
+     * 時速圓圈被拖到哪裡，畫面左上角起算的像素。兩個都是 NaN 代表沒拖過。
+     *
+     * 存絕對像素而不是比例，是因為這支 App 鎖直向、單一裝置的畫面尺寸不會變。
+     * 換手機會落在奇怪的位置，但畫面會把它夾回版面內，拖一下就好。
+     */
+    val dialX: Float = Float.NaN,
+    val dialY: Float = Float.NaN,
 )
 
 private val Context.settingsFile: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 private val APPEARANCE = stringPreferencesKey("appearance")
 private val DUCK_OTHERS = booleanPreferencesKey("duck_others")
+private val DIAL_X = floatPreferencesKey("dial_x")
+private val DIAL_Y = floatPreferencesKey("dial_y")
 
 /**
  * 存下來的偏好轉成 [Settings]。
@@ -40,6 +51,8 @@ internal fun Preferences.toSettings(): Settings {
         appearance = AppearanceMode.entries.firstOrNull { it.name == this[APPEARANCE] }
             ?: fallback.appearance,
         duckOthers = this[DUCK_OTHERS] ?: fallback.duckOthers,
+        dialX = this[DIAL_X] ?: fallback.dialX,
+        dialY = this[DIAL_Y] ?: fallback.dialY,
     )
 }
 
@@ -66,5 +79,18 @@ object SettingsStore {
 
     suspend fun setDuckOthers(context: Context, enabled: Boolean) {
         context.applicationContext.settingsFile.edit { it[DUCK_OTHERS] = enabled }
+    }
+
+    /**
+     * 記住時速圓圈被拖到哪裡。
+     *
+     * 拖曳每一幀都會呼叫，所以呼叫端必須節流 —— DataStore 每次寫入都是一次
+     * 完整的檔案改寫，一次拖曳幾十幀就是幾十次磁碟寫入。
+     */
+    suspend fun setDialPosition(context: Context, x: Float, y: Float) {
+        context.applicationContext.settingsFile.edit {
+            it[DIAL_X] = x
+            it[DIAL_Y] = y
+        }
     }
 }

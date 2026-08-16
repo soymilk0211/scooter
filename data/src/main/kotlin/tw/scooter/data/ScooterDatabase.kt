@@ -6,6 +6,8 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import tw.scooter.rules.DaySet
 import tw.scooter.rules.EffectivePeriod
+import tw.scooter.rules.EnforcementKind
+import tw.scooter.rules.EnforcementPoint
 import tw.scooter.rules.Grid
 import tw.scooter.rules.IntersectionRule
 import tw.scooter.rules.LatLon
@@ -44,10 +46,23 @@ class ScooterDatabase private constructor(context: Context) : SQLiteOpenHelper(
         })
     }
 
+    /**
+     * 逐版套用遷移腳本。
+     *
+     * 一次跑完中間每一版，而不是寫「從 1 直接到 3」的捷徑 —— 捷徑的數量是版本數
+     * 的平方，而且只有跳過那些版本的裝置會踩到，測試最不容易涵蓋。
+     *
+     * 缺腳本就丟例外。安靜地放行會留下一個結構對不上的資料庫，症狀是之後某次
+     * 查詢突然找不到欄位，那時已經離現場很遠了。
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // 結構尚未有第二版。遷移腳本必須逐版累加，不得重建資料表 ——
-        // observations 內可能存有尚未上傳的回報。
-        throw IllegalStateException("no migration from $oldVersion to $newVersion")
+        for (version in oldVersion until newVersion) {
+            val statements = Schema.MIGRATIONS[version]
+                ?: throw IllegalStateException("no migration from $version to ${version + 1}")
+            statements.forEach(db::execSQL)
+        }
+        db.execSQL("UPDATE meta SET value = ? WHERE key = ?",
+            arrayOf(newVersion.toString(), Schema.MetaKey.SCHEMA_VERSION))
     }
 
     /**
@@ -82,6 +97,38 @@ class ScooterDatabase private constructor(context: Context) : SQLiteOpenHelper(
                     entryRoadName = c.getString(8),
                     exitRoadName = c.getString(9),
                     effectivePeriod = readPeriod(c.isNull(10), c.getInt(10), c.getInt(11), c.getInt(12)),
+                )
+            }
+            return out
+        }
+    }
+
+    /**
+     * 取出可能相關的執法點。粗篩方式與 [rulesNear] 相同，精確比對留給 core-rules。
+     *
+     * 半徑要用測速的**彈性時窗**上緣（500 公尺），比路口規則的 300 公尺遠 ——
+     * 用同一個半徑查會讓測速警示永遠等到路口窗裡才出現，正好是要避免的事。
+     */
+    fun enforcementNear(lat: Double, lon: Double, radiusMeters: Double): List<EnforcementPoint> {
+        val cells = Grid.cellsWithin(lat, lon, radiusMeters)
+        if (cells.isEmpty()) return emptyList()
+        val placeholders = cells.joinToString(",") { "?" }
+        val args = cells.map { it.toString() }.toTypedArray()
+
+        readableDatabase.rawQuery(
+            "SELECT id, lat, lon, bearing, kind, speed_limit, description " +
+                "FROM enforcement_points WHERE cell IN ($placeholders)",
+            args,
+        ).use { c ->
+            val out = ArrayList<EnforcementPoint>(c.count)
+            while (c.moveToNext()) {
+                out += EnforcementPoint(
+                    id = c.getLong(0),
+                    location = LatLon(c.getDouble(1), c.getDouble(2)),
+                    bearing = if (c.isNull(3)) null else c.getDouble(3),
+                    kind = EnforcementKind.fromId(c.getInt(4)),
+                    speedLimitKmh = if (c.isNull(5)) null else c.getInt(5),
+                    description = c.getString(6),
                 )
             }
             return out

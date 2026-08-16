@@ -53,9 +53,17 @@ class RideService : Service() {
             // 判定緊接在定位之後，同一條執行緒 —— 路口只有幾秒的判定窗，
             // 排到別的排程器上等待是拿安全換架構整潔。
             RideRepository.state.value?.let { state ->
-                engine.evaluate(state)?.let { alert ->
+                val alerts = engine.evaluate(state)
+                RideRepository.onSpeedLimit(alerts.speedLimitKmh)
+                voice.duckOthers = RideRepository.duckOthers.value
+                // 測速先，路口後。這不是優先度，是時窗位置：測速在 500–320 公尺
+                // 之間講，路口在 300 公尺以內講，同一輪同時命中本來就少見。
+                alerts.enforcement?.let { seen ->
+                    RideRepository.onEnforcement(seen)
+                    voice.speakEnforcement(seen.point.speedLimitKmh, seen.overSpeed)
+                }
+                alerts.turn?.let { alert ->
                     RideRepository.onAlert(alert)
-                    voice.duckOthers = RideRepository.duckOthers.value
                     voice.speak(alert.rule.rule)
                 }
             }

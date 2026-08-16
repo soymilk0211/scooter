@@ -250,6 +250,26 @@ class AlertVoice(private val context: Context) {
             AlertPhrases.of(rule), TextToSpeech.QUEUE_FLUSH, null, "alert_live_${rule.id}")
     }
 
+    /**
+     * 播報測速照相。走即時 TTS，不走預合成音檔。
+     *
+     * 速限有七八種值、再乘上超速與否，全部預合成只是為了一個**沒有硬期限**的警示
+     * 去撐大快取。它的時窗是彈性的（500–320 公尺），即時合成慢個三秒不影響它有用。
+     * 轉向指示的預合成則不能拿掉 —— 那個有硬期限。
+     */
+    fun speakEnforcement(limitKmh: Int?, overSpeed: Boolean) {
+        publish()
+        if (!engineUsable) {
+            Log.w(TAG, "語音不可用，略過測速播報：$engineStatus")
+            return
+        }
+        requestFocus()
+        val phrase = AlertPhrases.speedCamera(limitKmh, overSpeed)
+        // QUEUE_ADD 而不是 FLUSH：兩種警示的時窗不重疊，真的撞在一起時代表
+        // 路口就在鏡頭旁邊，那時把已經在講的那句切掉只會兩句都聽不完整。
+        tts?.speak(phrase, TextToSpeech.QUEUE_ADD, null, "enforcement_${System.nanoTime()}")
+    }
+
     private fun play(file: File) {
         runCatching {
             player?.release()

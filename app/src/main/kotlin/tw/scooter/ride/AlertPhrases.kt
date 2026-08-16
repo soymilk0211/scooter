@@ -25,4 +25,21 @@ object AlertPhrases {
     val all: List<TurnRule> = TurnRule.entries.toList()
 
     fun cacheName(rule: TurnRule): String = "alert_v${VERSION}_${rule.id}.wav"
+
+    /**
+     * 測速照相的播報。**一律講速限** —— 只說「前方測速照相」等於要騎士自己回想
+     * 這條路限速多少，而他正在騎車。
+     *
+     * 超速才加「您已超速」。「現在有沒有超速」平時由時速圓圈用顏色表達，不佔語音
+     * 通道；只有在**這一刻確實超速又正要進入鏡頭**時，那句話才值得說出口。
+     *
+     * 這些句子**不預先合成**，走即時 TTS。預合成是為了轉向指示那個硬期限而存在的，
+     * 而測速是彈性時窗（500–320 公尺）—— 晚三秒沒有差別。速限有七八種值，
+     * 乘上超速與否，預合成等於為了一個沒有期限的警示去撐大快取。
+     */
+    fun speedCamera(limitKmh: Int?, overSpeed: Boolean): String = when {
+        limitKmh == null -> "前方測速照相"
+        overSpeed -> "前方測速照相，速限 $limitKmh，您已超速"
+        else -> "前方測速照相，速限 $limitKmh"
+    }
 }

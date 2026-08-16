@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import tw.scooter.data.ScooterDatabase
 import tw.scooter.rules.AlertThresholds
+import tw.scooter.rules.EnforcementThresholds
 import tw.scooter.rules.RiderState
 import tw.scooter.rules.destination
 import tw.scooter.rules.haversineMeters
@@ -27,16 +28,20 @@ import java.time.ZoneId
  *
  *     adb shell am broadcast -a tw.scooter.REPLAY
  *     adb shell am broadcast -a tw.scooter.REPLAY --es road 興隆路三段
+ *     adb shell am broadcast -a tw.scooter.REPLAY --es road 建國南路 --ei speed 70
  */
 class ReplayReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val roadFilter = intent.getStringExtra("road")
+        // 速度可以指定，因為有些行為只在特定速度下才看得到 —— 超速警示與時速圓圈
+        // 的顏色都是。固定 40 的話，那兩條路徑在模擬器上永遠驗不到。
+        val speedKmh = intent.getIntExtra("speed", DEFAULT_SPEED_KMH.toInt()).toDouble()
         val app = context.applicationContext
-        CoroutineScope(Dispatchers.IO).launch { replay(app, roadFilter) }
+        CoroutineScope(Dispatchers.IO).launch { replay(app, roadFilter, speedKmh) }
     }
 
-    private suspend fun replay(context: Context, roadFilter: String?) {
+    private suspend fun replay(context: Context, roadFilter: String?, speedKmh: Double) {
         val database = ScooterDatabase.open(context)
 
         // 從資料庫挑一條真實規則當目標。
@@ -74,15 +79,23 @@ class ReplayReceiver : BroadcastReceiver() {
             val state = RiderState(
                 location = here,
                 bearing = target.approachBearing,
-                speedKmh = SPEED_KMH,
+                speedKmh = speedKmh,
                 epochMillis = now.toEpochMilli() + elapsedMs,
                 dayOfWeek = at.dayOfWeek.value,
                 minuteOfDay = at.hour * 60 + at.minute,
             )
             RideRepository.injectForReplay(state)
 
-            val alert = engine.evaluate(state)
-            if (alert != null) {
+            val alerts = engine.evaluate(state)
+            RideRepository.onSpeedLimit(alerts.speedLimitKmh)
+            alerts.enforcement?.let { seen ->
+                RideRepository.onEnforcement(seen)
+                voice.speakEnforcement(seen.point.speedLimitKmh, seen.overSpeed)
+                Log.i(TAG, "測速警示！距離 ${"%.0f".format(seen.distanceMeters)} m，" +
+                    "速限 ${seen.point.speedLimitKmh}，超速 ${seen.overSpeed}，" +
+                    seen.point.description)
+            }
+            alerts.turn?.let { alert ->
                 fired = true
                 RideRepository.onAlert(alert)
                 voice.speak(alert.rule.rule)
@@ -96,7 +109,7 @@ class ReplayReceiver : BroadcastReceiver() {
             Log.d(TAG, "距路口 ${"%.0f".format(actual)} m")
 
             distance -= STEP_M
-            elapsedMs += (STEP_M / (SPEED_KMH / 3.6) * 1000).toLong()
+            elapsedMs += (STEP_M / (speedKmh / 3.6) * 1000).toLong()
             delay(TICK_MS)
         }
 
@@ -113,10 +126,16 @@ class ReplayReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "Replay"
 
-        /** 從 300 公尺觸發距離之外開始，才能看到「進入範圍」那一刻。 */
-        private val START_DISTANCE_M = AlertThresholds.MAX_DISTANCE_METERS + 100.0
+        /**
+         * 起點要涵蓋**最遠**的那個時窗，不是路口那個。
+         *
+         * 測速的彈性時窗上緣是 500 公尺，比路口的 300 公尺遠 —— 從 400 公尺起跑
+         * 會讓測速警示永遠沒有機會出現，而回放的用途正是證明它會出現。
+         */
+        private val START_DISTANCE_M =
+            maxOf(AlertThresholds.MAX_DISTANCE_METERS, EnforcementThresholds.MAX_DISTANCE_METERS) + 150.0
         private const val STEP_M = 20.0
-        private const val SPEED_KMH = 40.0
+        private const val DEFAULT_SPEED_KMH = 40.0
 
         /** 每步之間的真實等待，讓 log 讀得出順序。 */
         private const val TICK_MS = 150L
