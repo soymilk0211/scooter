@@ -1,0 +1,91 @@
+<meta charset="utf-8">
+<title>廊道判讀目錄</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ground: #F4F6F3;
+    --surface: #FFFFFF;
+    --ink: #131A16;
+    --muted: #5C6A63;
+    --faint: #8B978F;
+    --line: #DCE2DD;
+    --line-strong: #C2CCC5;
+    --direct: #126743;
+    --shadow: 0 1px 2px rgba(19, 26, 22, .06), 0 8px 24px -16px rgba(19, 26, 22, .35);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1210;
+      --surface: #151C18;
+      --ink: #E7EDE9;
+      --muted: #93A199;
+      --faint: #6D7A73;
+      --line: #232C27;
+      --line-strong: #33403A;
+      --direct: #5BBF8B;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei",
+                 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  .lede b { color: var(--ink); }
+
+  table {
+    width: 100%; border-collapse: collapse;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; box-shadow: var(--shadow);
+  }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12.5px; color: var(--faint); font-weight: 500; }
+  tr:last-child td { border-bottom: none; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; width: 5.5em; }
+  a { color: inherit; text-decoration: none; font-weight: 600; }
+  a:hover { text-decoration: underline; }
+  .done:not(:empty) { color: var(--direct); font-weight: 600; }
+  tr.finished { opacity: .55; }
+</style>
+
+<div class="wrap">
+  <h1>廊道判讀目錄</h1>
+  <p class="lede"><b>{{pages}}</b> 頁、<b>{{total}}</b> 個路口，其中 <b>{{withimages}}</b> 個有街景影像。
+    有影像的排前面。產生於 {{generated}}。</p>
+
+  <table>
+    <thead>
+      <tr><th>廊道</th><th class="n">路口</th><th class="n">有影像</th>
+          <th class="n">已實地</th><th class="n">已判</th></tr>
+    </thead>
+    <tbody>{{rows}}</tbody>
+  </table>
+</div>
+
+<script>
+  "use strict";
+  // 進度直接讀各頁用的同一份 localStorage。判資料會斷斷續續做上好幾天，
+  // 而「我判到哪了」不該靠記憶。
+  document.querySelectorAll("td.done").forEach((cell) => {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(cell.dataset.key) || "{}"); } catch (e) { /* 無痕 */ }
+    const count = Object.keys(saved).length;
+    if (!count) return;
+    cell.textContent = count;
+    const total = Number(cell.parentElement.querySelector("td.n").textContent);
+    if (count >= total) cell.parentElement.classList.add("finished");
+  });
+</script>

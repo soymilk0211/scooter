@@ -4,15 +4,16 @@
 路口按**騎過去的順序**排好，每個路口配上朝著行進方向拍的 Mapillary 影像、經緯度
 與面向角度，使用者點一下就記下規定，最後匯出成 field_checks.json 的形狀。
 
-影像預設抓到 `build/corridor_images/`，HTML 用相對路徑指過去。**所以這個檔要跟那個
-資料夾放在一起**；搬走了圖就載不出來，而破圖跟「這個路口沒有街景」在畫面上長得
-一模一樣 —— 頁面因此會在圖載不出來時換上一句說明，不會只留一個空白框。
-不確定怎麼開就用 `--serve`，它會起一個本機伺服器把網址印出來。
+**影像預設內嵌進 HTML**，所以那一個檔案自己就是完整的：直接雙擊開、丟進任何檢視器、
+搬去別的資料夾、寄給別人，圖都在。相對路徑（`--files`）只有「從影像資料夾旁邊開」
+才成立，而破圖跟「這個路口沒有街景」在畫面上長得一模一樣 —— 那是這個工具最不該
+搞錯的事。內嵌用 1024 寬、每個路口三張，把單頁壓在幾 MB 以內。
 
-`--embed` 會把影像內嵌成 data URI，一個檔案自己就完整，代價是六個路口就 9 MB，
-而且太大的檔案某些檢視器會直接開不起來。要把頁面寄給別人時才用。
+`--files` 改成相對路徑加 2048 寬、每個路口六張：頁面只有幾十 KB、放大看得更清楚，
+代價是那個 HTML 必須跟 `build/corridor_images/` 放在一起。搭 `--serve` 用最省事。
 
-**這頁不可以發布成 Artifact** —— 那裡的 CSP 擋外部主機，圖載不進來。
+**這頁不可以發布成 Artifact** —— 那裡的 CSP 擋外部主機，而 16 MB 上限與這頁的用途
+（本機判資料）也不合。
 
 判讀出來的東西**不是實地查核**。證據覆蓋順序是「實地查核 > 官方 > 影像查核」，
 所以匯出的每一筆都帶 `evidence.kind = "image"`，build_seed.py 看到它不會拿去蓋掉
@@ -22,8 +23,9 @@
     python make_corridor_page.py --list              # 有哪些廊道可以判
     python make_corridor_page.py 內湖路一段           # 該路每個面向各一頁
     python make_corridor_page.py 內湖路一段 --facing 東
+    python make_corridor_page.py --all                    # 全部廊道，兩個方向都產
+    python make_corridor_page.py 內湖路一段 --files        # 相對路徑 + 2048 寬（頁面很小）
     python make_corridor_page.py 內湖路一段 --serve        # 產完起本機伺服器，印出網址
-    python make_corridor_page.py 內湖路一段 --embed        # 影像內嵌，單檔可攜（很大）
     python make_corridor_page.py 內湖路一段 --link         # 影像連 Mapillary（連結會過期）
     python make_corridor_page.py 內湖路一段 --refetch      # 忽略快取重新查
 """
@@ -48,6 +50,7 @@ import config
 
 BUILD = pathlib.Path(__file__).parent / "build"
 TEMPLATE_PATH = pathlib.Path(__file__).parent / "corridor_template.html"
+INDEX_TEMPLATE_PATH = pathlib.Path(__file__).parent / "corridor_index_template.html"
 CACHE = BUILD / "cache"
 IMAGE_DIR = BUILD / "corridor_images"
 FIELD_CHECKS = pathlib.Path(__file__).parent / "field_checks.json"
@@ -72,6 +75,10 @@ SUSPICIOUSLY_FEW = 5
 # 看不到前方路口的牌子。全景不受這個限制 —— 它本來就每個方向都拍到了。
 ANGLE_TOLERANCE = 55.0
 MAX_IMAGES_PER_JUNCTION = 6
+# 內嵌模式少放幾張。base64 會把檔案再撐大三分之一，六張一個路口的頁面實測 9 MB，
+# 而太大的檔案某些檢視器會直接開不起來 —— 那比少三張候選照片嚴重得多。
+# 排序是好的在前，所以砍掉的是最不可能用到的那幾張。
+MAX_EMBEDDED_PER_JUNCTION = 3
 
 FACING = {0.0: "北", 90.0: "東", 180.0: "南", 270.0: "西"}
 FACING_BY_LABEL = {v: k for k, v in FACING.items()}
@@ -269,9 +276,21 @@ def already_field_checked() -> dict[tuple[str, float], dict]:
 
 
 def corridors() -> dict[str, dict[float, list[dict]]]:
-    """可判讀的廊道：{路名: {面向: [規則…]}}，只含已定位的路口。"""
+    """可判讀的廊道：{路名: {面向: [規則…]}}，只含已定位的路口。
+
+    **同一條路的不同寫法會合併。** `成功路2段` 與 `成功路二段` 是同一條路，官方
+    清冊兩種都用。不合併的話它們會產生同名的輸出檔互相覆蓋 —— 目錄上看得到兩列，
+    點進去卻是同一頁，而使用者會以為兩邊都判過了。
+    顯示名取資料裡出現最多次的那一種寫法。
+    """
     raw = json.loads((BUILD / "rules_raw.json").read_text(encoding="utf-8"))
     junctions = json.loads((BUILD / "junctions.json").read_text(encoding="utf-8"))
+
+    spellings: dict[str, dict[str, int]] = {}
+    for rule in raw:
+        counts = spellings.setdefault(canonical(rule["road_a"]), {})
+        counts[rule["road_a"]] = counts.get(rule["road_a"], 0) + 1
+    display = {key: max(counts, key=counts.get) for key, counts in spellings.items()}
 
     out: dict[str, dict[float, list[dict]]] = {}
     for rule in raw:
@@ -281,7 +300,8 @@ def corridors() -> dict[str, dict[float, list[dict]]]:
             continue
         entry, exit_road = build_seed.road_names(junction, rule)
         approach, exit_bearing = build_seed.real_bearings(junction, rule)
-        out.setdefault(rule["road_a"], {}).setdefault(float(rule["approach_bearing"]), []).append({
+        road = display[canonical(rule["road_a"])]
+        out.setdefault(road, {}).setdefault(float(rule["approach_bearing"]), []).append({
             "junction_text": rule["junction_text"],
             "district": rule["region"],
             "lat": junction["lat"],
@@ -355,8 +375,11 @@ def attach_sources(items: list[dict], mode: str) -> None:
     """
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     for item in items:
+        wanted = item["images"]
+        if mode == "embed":
+            wanted = wanted[:MAX_EMBEDDED_PER_JUNCTION]
         kept = []
-        for image in item["images"]:
+        for image in wanted:
             if mode == "link":
                 image["src"] = image["url"]
                 kept.append(image)
@@ -461,8 +484,8 @@ def render_card(index: int, item: dict) -> str:
 
 
 MODE_LABEL = {
+    "embed": "影像已內嵌，這個檔自己就完整",
     "files": "影像在 build/corridor_images/，要跟這個檔放在一起",
-    "embed": "影像已內嵌，單檔可攜",
     "link": "影像連 Mapillary，需要網路且連結會過期",
 }
 
@@ -487,6 +510,35 @@ def build_page(road: str, facing: float, items: list[dict], mode: str) -> str:
     return page.replace("{{cards}}", cards)
 
 
+def write_index(pages: list[dict]) -> pathlib.Path:
+    """一次產多頁時的目錄。
+
+    判資料是斷斷續續做上好幾天的事，而「我判到哪了」不該靠記憶 —— 每一列的進度
+    直接讀同一份 localStorage，所以目錄上看到的數字就是那一頁裡真正按過的數量。
+    """
+    rows = "".join(
+        f'<tr><td><a href="{html.escape(p["file"])}">'
+        f'{html.escape(p["road"])}　面向{FACING[p["facing"]]}</a></td>'
+        f'<td class="n">{p["total"]}</td>'
+        f'<td class="n">{p["withimages"]}</td>'
+        f'<td class="n">{p["settled"] or ""}</td>'
+        f'<td class="n done" data-key="corridor:{html.escape(canonical(p["road"]))}'
+        f':{p["facing"]:.0f}"></td></tr>'
+        for p in sorted(pages, key=lambda p: (-p["withimages"], p["road"]))
+    )
+    total = sum(p["total"] for p in pages)
+    with_images = sum(p["withimages"] for p in pages)
+    page = INDEX_TEMPLATE_PATH.read_text(encoding="utf-8")
+    for key, value in {
+        "pages": len(pages), "total": total, "withimages": with_images,
+        "generated": date.today().isoformat(),
+    }.items():
+        page = page.replace("{{" + key + "}}", str(value))
+    out = BUILD / "corridor_index.html"
+    out.write_text(page.replace("{{rows}}", rows), encoding="utf-8")
+    return out
+
+
 def list_corridors() -> int:
     available = corridors()
     print(f"{'路名':<16}{'面向':<22}{'路口數'}")
@@ -507,6 +559,8 @@ def main() -> int:
 
     names = [a for a in args if not a.startswith("--")]
     flags = {a for a in args if a.startswith("--")}
+    if "--all" in flags:
+        names = list(corridors())
     if "--facing" in args:
         wanted = args[args.index("--facing") + 1]
         names = [n for n in names if n != wanted]
@@ -520,7 +574,7 @@ def main() -> int:
         print(__doc__)
         return 1
 
-    mode = "embed" if "--embed" in flags else "link" if "--link" in flags else "files"
+    mode = "files" if "--files" in flags else "link" if "--link" in flags else "embed"
     refetch = "--refetch" in flags
     token = config.get("MAPILLARY_TOKEN")
     print(f"Mapillary {config.masked(token)}（{MODE_LABEL[mode]}）\n")
@@ -529,6 +583,7 @@ def main() -> int:
     by_canonical = {canonical(k): k for k in available}
 
     written = []
+    pages: list[dict] = []
     for name in names:
         road = by_canonical.get(canonical(name))
         if road is None:
@@ -544,10 +599,22 @@ def main() -> int:
             out = BUILD / f"corridor_{canonical(road)}_{FACING[facing]}.html"
             out.write_text(build_page(road, facing, items, mode), encoding="utf-8")
             written.append(out)
-            print(f"  → {out.name}（{out.stat().st_size / 1024:.0f} KB）\n")
+            pages.append({
+                "road": road, "facing": facing, "file": out.name,
+                "total": len(items),
+                "withimages": sum(1 for i in items if i["images"]),
+                "settled": sum(1 for i in items if i["settled"]),
+                "size_kb": round(out.stat().st_size / 1024),
+            })
+            print(f"  → {out.name}（{pages[-1]['size_kb']} KB）\n")
 
     if not written:
         return 1
+
+    if len(pages) > 1:
+        index = write_index(pages)
+        written.insert(0, index)
+        print(f"目錄頁 → {index.name}\n")
 
     print("判完按頁尾的「匯出 JSON」，再執行："
           "\n  python apply_image_checks.py <下載的 json>\n")

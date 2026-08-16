@@ -5,7 +5,7 @@
 ```bash
 python taipei_parse.py          # 1. 下載並解析台北市待轉例外 CSV
 python taipei_geocode.py        # 2. 用 OSM 路網把路口解析成座標
-python import_enforcement.py    # 3. 下載科技執法點位（自帶座標）
+python import_enforcement.py    # 3. 下載科技執法與固定測速點位（自帶座標）
 python build_seed.py            # 4. 組成 scooter_seed.db
 cp build/scooter_seed.db ../app/src/main/assets/
 ```
@@ -79,24 +79,28 @@ cp build/scooter_seed.db ../app/src/main/assets/
 
 ```bash
 python make_corridor_page.py --list             # 有哪些廊道可以判
-python make_corridor_page.py 內湖路一段 --serve   # 產頁 + 起本機伺服器，把網址印出來
-# 瀏覽器開網址，點完按「匯出 JSON」
+python make_corridor_page.py --all              # 全部廊道 + build/corridor_index.html 目錄頁
+# 雙擊 corridor_index.html 開始判，點完按「匯出 JSON」
 python apply_image_checks.py build/image_checks_內湖路一段_東.json
 python build_seed.py                            # 不一致的寫進 build/image_conflicts.csv
 python make_ride_list.py                        # 那些矛盾會排到查核清單最前面
 ```
 
 一頁是**一條路一個方向**，路口按騎過去會遇到的順序排（投影到正方位，所以同一條路的
-兩個方向剛好互為反序），每個配上朝著行進方向拍的 Mapillary 影像（最多六張，新的排
-前面）、經緯度與面向角度。
+兩個方向剛好互為反序），每個配上朝著行進方向拍的 Mapillary 影像（新的排前面）、
+經緯度與面向角度。
 
 - **不要發布成 Artifact。** 那裡的 CSP 擋外部主機，影像載不進來。
-- 影像預設抓到 `build/corridor_images/`，HTML 用相對路徑指過去，所以**那個 HTML 要跟
-  那個資料夾放在一起**。`--serve` 起本機伺服器是最不會出錯的開法：有些檢視器會把
-  HTML 轉成內嵌快照，那時相對路徑一律解析不到。圖載不出來時頁面會換上一句說明，
-  不會只留一個空白框 —— 空白框跟「這個路口沒有街景」長得一模一樣，而處置完全相反。
-- `--embed` 把影像內嵌成單一檔案（六個路口約 9 MB，要寄給別人時才用）；
+- **影像預設內嵌**（1024 寬、每個路口三張，單頁幾 MB），所以那個 HTML 檔自己就完整：
+  雙擊就能開，不必配合任何資料夾、不必起伺服器。這是踩過坑之後的預設 —— 相對路徑
+  只在「從影像資料夾旁邊開」時才成立，換個開法就是一排破圖，而破圖跟「這個路口
+  沒有街景」在畫面上長得一模一樣，處置卻完全相反。頁面因此會在圖載不出來時換上
+  一句說明，不會只留一個空白框。
+- `--files` 改用相對路徑加 2048 寬、每個路口六張：頁面只有幾十 KB、放大更清楚，
+  但那個 HTML 必須跟 `build/corridor_images/` 放在一起，搭 `--serve` 最省事。
   `--link` 直接連 Mapillary（連結有期限，過幾天就變破圖）。
+- `--all` 一次產完所有廊道，並附一頁 `corridor_index.html` 目錄：有影像的排前面，
+  每一列的「已判」直接讀該頁的 localStorage，所以進度不必自己記。
 - 判讀紀錄存在瀏覽器的 localStorage，關掉頁面不會不見；**但按過「匯出 JSON」之前，
   那些判讀只存在那一個瀏覽器裡**。
 - 判讀寫進 `field_checks.json` 的 **`image_checks`**，不是 `checks`。兩個陣列在結構上

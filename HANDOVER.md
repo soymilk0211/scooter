@@ -295,8 +295,8 @@ cp build/scooter_seed.db ../app/src/main/assets/
 
 ```bash
 python make_corridor_page.py --list             # 有哪些廊道可以判
-python make_corridor_page.py 內湖路一段 --serve   # 產頁 + 起本機伺服器，印出網址
-# 瀏覽器開網址，點完按「匯出 JSON」
+python make_corridor_page.py --all              # 全部廊道 + corridor_index.html 目錄頁
+# 雙擊 corridor_index.html 開始判，點完按「匯出 JSON」
 python apply_image_checks.py build/image_checks_內湖路一段_東.json
 python build_seed.py && python make_ride_list.py
 ```
@@ -305,10 +305,12 @@ python build_seed.py && python make_ride_list.py
 的兩個方向剛好互為反序），每個配上朝著行進方向拍的 Mapillary 影像、經緯度與面向
 角度。已經有實地查核的會標出來並略過。**不要發布成 Artifact**，CSP 擋外部主機。
 
-**用 `--serve`，不要直接開檔。** 影像預設放在 `build/corridor_images/`，HTML 用相對
-路徑指過去 —— 而「用瀏覽器開那個檔」在不同環境下的意思差很多，有些檢視器會把 HTML
-轉成內嵌快照，那時相對路徑一律解析不到，畫面上就是一排空白框（2026-08-16 踩過）。
-起伺服器之後路徑的行為就只有一種。真的要單檔可攜就 `--embed`，代價是六個路口 9 MB。
+**影像預設內嵌，直接雙擊那個 HTML 就好。** 這是踩了兩次坑之後改的預設：相對路徑
+（現在的 `--files`）只有「從影像資料夾旁邊開」才成立，而「用瀏覽器開那個檔」在不同
+環境下的意思差很多 —— 有些檢視器會把 HTML 轉成內嵌快照，那時相對路徑一律解析不到；
+用 `--serve` 起的伺服器一關掉，已經快取的圖還在、lazy-load 的就 404，於是變成
+「有些圖載得進來、有些載不進來」。內嵌之後這些全部消失。代價是單頁幾 MB，
+以及每個路口只放三張（1024 寬）而不是六張（2048 寬）。
 
 **判讀結果寫進 `field_checks.json` 的 `image_checks`，不是 `checks`。** 訪談定下的
 覆蓋順序是「實地查核 > 官方 > 影像查核」，所以影像**不會改動任何規則** —— 它只做
