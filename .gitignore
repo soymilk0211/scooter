@@ -10,3 +10,4 @@ captures/
 *.apk
 *.aab
 pipeline/build/
+pipeline/__pycache__/
