@@ -42,6 +42,18 @@ dependencies {
     implementation(project(":core-rules"))
     implementation(project(":data"))
 
+    // BRouter 的路由核心（ADR-0016）。純 Java、346 KB、零個 android 參照。
+    //
+    // **沒有 Maven 座標。** 它只出現在 GitHub release 的 zip 裡
+    // （https://github.com/abrensch/brouter/releases，取 `-ro.jar` 那個，
+    // 不是 2.3 MB 的 `-all.jar` —— 後者含建圖工具，App 用不到）。
+    // 所以版本寫在檔名裡，升級是手動換檔加改這一行。
+    //
+    // 搭配的 `lookups.dat` 與 `scooter-tw.brf` 在 assets/brouter/ 底下，
+    // 兩者必須與這個 jar 同版本 —— lookups.dat 是標籤字典，
+    // 版本對不上時的症狀是 profile 解析出錯，不是路線變差。
+    implementation(files("libs/brouter-1.7.10-ro.jar"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
