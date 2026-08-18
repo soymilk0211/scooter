@@ -9,6 +9,9 @@ import tw.scooter.rules.EffectivePeriod
 import tw.scooter.rules.EnforcementKind
 import tw.scooter.rules.EnforcementPoint
 import tw.scooter.rules.Grid
+import tw.scooter.rules.axisDelta
+import tw.scooter.rules.bearingDegrees
+import tw.scooter.rules.distanceToSegmentMeters
 import tw.scooter.rules.IntersectionRule
 import tw.scooter.rules.LatLon
 import tw.scooter.rules.ProhibitedSegment
@@ -23,6 +26,17 @@ class ScooterDatabase private constructor(context: Context) : SQLiteOpenHelper(
 ) {
 
     companion object {
+        /** 找路名的搜尋半徑。都市峽谷的 GPS 誤差可以到 20–30 公尺。 */
+        private const val ROAD_NAME_SEARCH_METERS = 40.0
+
+        /**
+         * 走向的容許夾角（軸線，0–90）。
+         *
+         * 比路口規則的 ±30 度寬：這裡比對的是一整段路的走向，
+         * 而騎士在彎道上的瞬時方向可以差不少。
+         */
+        private const val ROAD_NAME_MAX_AXIS_DELTA = 45.0
+
         /**
          * 開啟資料庫，必要時先安裝種子檔。
          *
@@ -213,6 +227,46 @@ class ScooterDatabase private constructor(context: Context) : SQLiteOpenHelper(
             val lon = parts[1].toDoubleOrNull() ?: return@mapNotNull null
             LatLon(lat, lon)
         }
+
+    /**
+     * 某個位置、朝某個方向的那條路叫什麼。查不到回 null。
+     *
+     * **方位角是必要的，不是選配。** 路口上兩條路交會，離騎士最近的線段可能是
+     * 橫向那一條；沒有方向就會把「忠孝東路」講成「復興南路」，
+     * 而那種錯誤比不講路名更糟 —— 騎士會照著錯的路名去找路口。
+     *
+     * 線段的走向用兩端點算，並且**只比軸線不比正反向**：OSM 的 way 方向是
+     * 繪製時的順序，與騎士的行進方向無關。
+     */
+    fun roadNameAt(lat: Double, lon: Double, bearingDeg: Double): String? {
+        val cells = Grid.cellsWithin(lat, lon, ROAD_NAME_SEARCH_METERS)
+        if (cells.isEmpty()) return null
+        val placeholders = cells.joinToString(",") { "?" }
+        val args = cells.map { it.toString() }.toTypedArray()
+        val here = LatLon(lat, lon)
+
+        var bestName: String? = null
+        var bestDistance = ROAD_NAME_SEARCH_METERS
+
+        readableDatabase.rawQuery(
+            "SELECT n.name, s.lat1, s.lon1, s.lat2, s.lon2 FROM road_segments s " +
+                "JOIN road_names n ON n.id = s.name_id WHERE s.cell IN ($placeholders)",
+            args,
+        ).use { c ->
+            while (c.moveToNext()) {
+                val a = LatLon(c.getInt(1) / 1_000_000.0, c.getInt(2) / 1_000_000.0)
+                val b = LatLon(c.getInt(3) / 1_000_000.0, c.getInt(4) / 1_000_000.0)
+                val axis = axisDelta(bearingDeg, bearingDegrees(a, b))
+                if (axis > ROAD_NAME_MAX_AXIS_DELTA) continue
+                val d = distanceToSegmentMeters(here, a, b)
+                if (d < bestDistance) {
+                    bestDistance = d
+                    bestName = c.getString(0)
+                }
+            }
+        }
+        return bestName
+    }
 
     fun insertObservation(
         lat: Double,

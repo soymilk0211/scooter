@@ -56,6 +56,10 @@ class RideService : Service() {
     @Volatile
     private var engine: AlertEngine? = null
 
+    /** 路名查詢用。與 [engine] 同一個資料庫，同樣在 onCreate 於 IO 執行緒開好。 */
+    @Volatile
+    private var database: ScooterDatabase? = null
+
     private val voice by lazy { AlertVoice(this) }
 
     /**
@@ -98,8 +102,16 @@ class RideService : Service() {
                 // 轉向指示。放在最後，因為它是導航中最頻繁的一種播報 ——
                 // 前面幾種都是偶發的，撞在一起時讓它們先講完整。
                 announcer.update(RideRepository.progress.value, state.speedKmh)?.let { hint ->
-                    AlertPhrases.maneuver(hint.maneuver.angleDegrees, hint.distanceBucketMeters)
-                        ?.let(voice::speakManeuver)
+                    // 路名只查主指示那一則。確認短句不帶路名（見 AlertPhrases），
+                    // 而在定位回呼裡多做一次網格查詢，能省就省。
+                    val roadName = hint.maneuver.exitBearingDegrees
+                        ?.takeIf { hint.distanceBucketMeters != null }
+                        ?.let { database?.roadNameAt(hint.maneuver.at.lat, hint.maneuver.at.lon, it) }
+                    AlertPhrases.maneuver(
+                        hint.maneuver.angleDegrees,
+                        hint.distanceBucketMeters,
+                        roadName,
+                    )?.let(voice::speakManeuver)
                 }
             }
         }
@@ -127,7 +139,9 @@ class RideService : Service() {
      */
     private fun openDatabase() {
         scope.launch(Dispatchers.IO) {
-            engine = AlertEngine(ScooterDatabase.open(applicationContext))
+            val db = ScooterDatabase.open(applicationContext)
+            database = db
+            engine = AlertEngine(db)
         }
     }
 

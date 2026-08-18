@@ -77,11 +77,16 @@ object AlertPhrases {
      * 距離只有幾個級距（[Announcement.distanceBucketMeters] 給的），
      * 所以整個句子集合是有限的，可以全部預先合成 —— 那正是不講路名換來的好處。
      */
-    fun maneuver(angleDegrees: Float, distanceBucketMeters: Int?): String? {
+    fun maneuver(angleDegrees: Float, distanceBucketMeters: Int?, roadName: String? = null): String? {
         if (abs(angleDegrees) < MIN_ANNOUNCED_ANGLE) return null
         val direction = if (angleDegrees < 0) "左轉" else "右轉"
-        return if (distanceBucketMeters == null) "這裡$direction"
-        else "前方 $distanceBucketMeters 公尺，$direction"
+        // 五秒前那一則**永遠不帶路名也不帶距離**：那時候騎士要看的是路口不是聽字，
+        // 而且它是唯一有硬期限的一則 —— 固定句子才能預先合成，
+        // 即時合成的首句延遲實測 2.8–3.6 秒，五秒吸收不了。
+        if (distanceBucketMeters == null) return "這裡$direction"
+        // 二十秒那一則有時間，所以帶路名 —— 它要回答的是「是哪個路口」。
+        return if (roadName.isNullOrBlank()) "前方 $distanceBucketMeters 公尺，$direction"
+        else "前方 $distanceBucketMeters 公尺，$roadName$direction"
     }
 
     /** 小於這個角度的轉向不播報。 */

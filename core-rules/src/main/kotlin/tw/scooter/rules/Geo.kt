@@ -94,6 +94,18 @@ fun bearingDelta(a: Double, b: Double): Double {
 }
 
 /**
+ * 兩方位角的**軸線**夾角，0..180 度收成 0..90。
+ *
+ * 與 [bearingDelta] 的差別：這個把反向視為相同。用在「這條線段是不是與我
+ * 同一條路上」這類判定 —— OSM 的 way 方向是繪製時的節點順序，
+ * 與騎士的行進方向無關，一條南北向的路可能被畫成由北往南。
+ */
+fun axisDelta(a: Double, b: Double): Double {
+    val d = bearingDelta(a, b)
+    return minOf(d, 180.0 - d)
+}
+
+/**
  * 以固定經緯度網格量化座標，作為空間索引鍵。
  *
  * 未使用 SQLite R-tree —— 該模組並非所有 Android 內建 SQLite 版本都啟用，

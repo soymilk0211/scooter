@@ -22,7 +22,7 @@ object Schema {
     const val DATABASE_NAME = "scooter.db"
 
     /** 結構版本。與 meta 表中的 data_version（資料版本）是不同的東西。 */
-    const val SCHEMA_VERSION = 3
+    const val SCHEMA_VERSION = 4
 
     val CREATE: List<String> = listOf(
         """
@@ -158,6 +158,35 @@ object Schema {
         """.trimIndent(),
         "CREATE INDEX idx_prohibited_cells ON prohibited_cells(cell)",
 
+        // 路名索引。**路線引擎不提供路名** —— BRouter 的圖磚存的是「第幾號標籤、
+        // 第幾號值」的索引對，那只對值可以列舉的標籤成立，而路名幾乎每條都不同。
+        // 整份 lookups.dat 裡 name 的條目數是 0，**那是格式的限制，
+        // 自建圖磚也解不了**（ADR-0017）。所以路名走我們自己的 Overpass 管線。
+        //
+        // 路名另存字典：臺北 13,102 條路只有 5,279 個不重複名稱，
+        // 而它是這份資料裡唯一的字串欄位。
+        """
+        CREATE TABLE road_names (
+            id   INTEGER PRIMARY KEY,
+            name TEXT NOT NULL
+        )
+        """.trimIndent(),
+
+        // 座標存**微度整數**不是 REAL：REAL 固定 8 位元組，整數會依大小壓到
+        // 4 位元組，而微度約 0.11 公尺、遠比 GPS 精確。兩萬段乘四個座標，
+        // 這個選擇差了一兩 MB。
+        """
+        CREATE TABLE road_segments (
+            cell    INTEGER NOT NULL,
+            name_id INTEGER NOT NULL,
+            lat1    INTEGER NOT NULL,
+            lon1    INTEGER NOT NULL,
+            lat2    INTEGER NOT NULL,
+            lon2    INTEGER NOT NULL
+        )
+        """.trimIndent(),
+        "CREATE INDEX idx_road_segments_cell ON road_segments(cell)",
+
         // 本機待上傳的觀察與回報。上傳後保留一段時間供除錯，再由清理工作刪除。
         """
         CREATE TABLE observations (
@@ -210,6 +239,9 @@ object Schema {
         // 端點做出來才拿得到這四筆。這不是遺漏，是那條保護的必然代價；
         // 寫在這裡是因為「表建好了卻查不到東西」看起來像故障。
         2 to CREATE.filter { it.contains("prohibited_") },
+        // 3 -> 4：新增路名索引。同樣純新增，而且同樣**升級後會是空的** ——
+        // SeedInstaller 只在資料庫不存在時安裝種子。既有裝置要等資料同步端點。
+        3 to CREATE.filter { it.contains("road_names") || it.contains("road_segments") },
     )
 
     object MetaKey {

@@ -26,7 +26,7 @@ SEED = BUILD / "scooter_seed.db"
 
 # 必須與 data/src/main/kotlin/tw/scooter/data/Schema.kt 保持一致。
 # 兩邊都改到才算改完 —— 結構不一致時 App 會在讀取種子檔時炸開。
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 CELL_DEGREES = 0.01  # 與 core-rules 的 Grid.CELL_DEGREES 相同
 
 CREATE = [
@@ -119,6 +119,28 @@ CREATE = [
         segment_id INTEGER NOT NULL
     )""",
     "CREATE INDEX idx_prohibited_cells ON prohibited_cells(cell)",
+    # 路名索引。**路線引擎不提供路名**（BRouter 的圖磚格式放不下 —— lookups.dat
+    # 是標籤字典，只裝得下可列舉的值，而路名幾乎每條都不同），所以導航指示要唸出
+    # 「OO 路左轉」就得有自己的一份。見 ADR-0017 與決策檔案 D5/D7。
+    #
+    # 路名另存一張表做字典：臺北 13,102 條路只有 5,279 個不重複名稱，
+    # 而路名是這份資料裡唯一的字串欄位 —— 重複存等於把整份索引撐大一倍。
+    """CREATE TABLE road_names (
+        id   INTEGER PRIMARY KEY,
+        name TEXT NOT NULL
+    )""",
+    # 座標存微度整數而不是 REAL：SQLite 的 REAL 是 8 位元組、整數會依大小
+    # 壓縮成 4 位元組，而微度（約 0.11 公尺）遠比 GPS 精確。
+    # 八萬段乘以四個座標，這個選擇差了一兩 MB。
+    """CREATE TABLE road_segments (
+        cell    INTEGER NOT NULL,
+        name_id INTEGER NOT NULL,
+        lat1    INTEGER NOT NULL,
+        lon1    INTEGER NOT NULL,
+        lat2    INTEGER NOT NULL,
+        lon2    INTEGER NOT NULL
+    )""",
+    "CREATE INDEX idx_road_segments_cell ON road_segments(cell)",
     """CREATE TABLE observations (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
         lat              REAL    NOT NULL,
@@ -148,6 +170,38 @@ TURN_LABEL = {0: "中性播報", 1: "待轉", 2: "直接左轉", 3: "內側專�
 # 並把「法條」與「某個縣市的行政實務」分開 —— 原本寫在這裡的「三車道以上待轉」
 # 是臺北市交通局的實務，不是 §99 的推導，而放在這裡看起來像後者。
 
+
+
+def _perp_distance_m(p, a, b):
+    """點到線段的垂距，公尺。本地平面近似，這個尺度下誤差遠小於 GPS。"""
+    mx = 111_320.0 * math.cos(math.radians(p[0]))
+    my = 110_540.0
+    ax, ay = (a[1] - p[1]) * mx, (a[0] - p[0]) * my
+    bx, by = (b[1] - p[1]) * mx, (b[0] - p[0]) * my
+    dx, dy = bx - ax, by - ay
+    length2 = dx * dx + dy * dy
+    if length2 <= 0:
+        return math.hypot(ax, ay)
+    t = max(0.0, min(1.0, (-ax * dx - ay * dy) / length2))
+    return math.hypot(ax + t * dx, ay + t * dy)
+
+
+def simplify(points, tolerance_m=8.0):
+    """Douglas-Peucker。台北的路多半是直的，簡化砍掉的是同一條直線上的中間點。
+
+    容差取 8 公尺：遠小於路名比對的容忍量（那受 GPS 誤差支配，數十公尺），
+    所以簡化不會讓比對變差，只是少存一堆共線的點。
+    """
+    if len(points) < 3:
+        return points
+    worst, index = 0.0, 0
+    for i in range(1, len(points) - 1):
+        d = _perp_distance_m(points[i], points[0], points[-1])
+        if d > worst:
+            worst, index = d, i
+    if worst <= tolerance_m:
+        return [points[0], points[-1]]
+    return simplify(points[:index + 1], tolerance_m)[:-1] + simplify(points[index:], tolerance_m)
 
 
 def cell_of(lat: float, lon: float) -> int:
@@ -500,6 +554,32 @@ def main() -> int:
                 )
             prohibited_count += 1
 
+    # 路名索引。
+    road_path = BUILD / "road_names.json"
+    road_count = segment_count = 0
+    if road_path.exists():
+        roads = json.loads(road_path.read_text(encoding="utf-8"))
+        name_ids: dict[str, int] = {}
+        for r in roads:
+            name = r["name"]
+            if name not in name_ids:
+                name_ids[name] = len(name_ids) + 1
+                db.execute("INSERT INTO road_names (id, name) VALUES (?,?)", (name_ids[name], name))
+            points = simplify([tuple(p) for p in r["points"]])
+            road_count += 1
+            for a, b in zip(points, points[1:]):
+                # 一段可能跨網格，兩端各登記一次。台北的路段短，
+                # 幾乎都落在同一格，跨格的那些多一列而已。
+                for cell in {cell_of(*a), cell_of(*b)}:
+                    db.execute(
+                        "INSERT INTO road_segments (cell, name_id, lat1, lon1, lat2, lon2)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (cell, name_ids[name],
+                         round(a[0] * 1e6), round(a[1] * 1e6),
+                         round(b[0] * 1e6), round(b[1] * 1e6)),
+                    )
+                segment_count += 1
+
     db.commit()
 
     if needs_review:
@@ -536,6 +616,7 @@ def main() -> int:
               f"（見 default_rules.py）")
     print(f"  執法點位  {enforcement_count} 筆")
     print(f"  禁行路段  {prohibited_count} 筆（全面禁行機車，路線層）")
+    print(f"  路名索引  {road_count} 條路、{segment_count} 段（簡化後）")
     print(f"  降級規則  {len(downgraded)} 筆（離開方向為機車禁行路段）")
     print(f"  實地查核  {verified} 筆（信心 100，蓋過自動推導），新增 {added} 筆")
     print(f"  影像判讀  一致 {image_agree} 筆、不一致 {len(image_conflicts)} 筆"

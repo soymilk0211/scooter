@@ -23,6 +23,14 @@ data class Maneuver(
     val isLeftTurn: Boolean,
     /** 轉入那條路的標籤，形如 `highway=secondary oneway=yes`。**不含路名。** */
     val wayTags: String = "",
+    /**
+     * 轉完之後的行進方位角。
+     *
+     * **查路名一定要有它。** 路口上兩條路交會，離騎士最近的線段可能是橫向那條；
+     * 沒有方向就會把「忠孝東路」講成「復興南路」，而那比不講路名更糟 ——
+     * 騎士會照著錯的路名去找路口。
+     */
+    val exitBearingDegrees: Double? = null,
 )
 
 /** 一條算好的路線。 */

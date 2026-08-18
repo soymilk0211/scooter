@@ -9,6 +9,7 @@ import btools.router.VoiceHintAccess
 import tw.scooter.rules.LatLon
 import tw.scooter.rules.Maneuver
 import tw.scooter.rules.Route
+import tw.scooter.rules.bearingDegrees
 import tw.scooter.rules.haversineMeters
 
 private const val TAG = "ScooterRouter"
@@ -89,6 +90,10 @@ class ScooterRouter(private val context: Context) {
                 angleDegrees = VoiceHintAccess.angle(hint),
                 isLeftTurn = VoiceHintAccess.isLeftTurn(hint),
                 wayTags = VoiceHintAccess.wayTags(hint),
+                // 轉完之後往哪走。往後看一個節點就夠 —— 再往後會被下一個
+                // 彎道帶偏，而我們要的是「剛轉進去時車頭朝哪」。
+                exitBearingDegrees = points.getOrNull(index + 1)
+                    ?.let { bearingDegrees(points[index], it) },
             )
         }
 
