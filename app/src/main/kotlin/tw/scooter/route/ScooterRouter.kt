@@ -5,23 +5,45 @@ import android.util.Log
 import btools.router.OsmNodeNamed
 import btools.router.RoutingContext
 import btools.router.RoutingEngine
+import btools.router.VoiceHintAccess
 import tw.scooter.rules.LatLon
+import tw.scooter.rules.haversineMeters
 
 private const val TAG = "ScooterRouter"
 
 /**
- * 一條算好的路線。
+ * 路線上的一次轉向。
  *
- * **刻意只回傳幾何與距離，不回傳轉向指示。** BRouter 的 `VoiceHint` 把 `cmd`、
- * `angle`、`distanceToNext` 都設成 package-private，公開的只有 `getTime()`
- * 這幾個，所以逐向指示要另外做一個放在 `btools.router` 套件裡的 adapter
- * （見 HANDOVER）。在那之前這裡不假裝有那個資訊。
+ * **沒有路名。** BRouter 的 rd5 只存路由用得到的標籤，`name` 不在其中 ——
+ * 它是路由引擎，不是圖資供應商。路名要另外的來源（見決策檔案 D5）。
+ *
+ * [alongRouteMeters] 是從起點沿著路線走到這裡的距離。導航跟隨要的是這個，
+ * 不是直線距離 —— 騎士是沿著路走的。
  */
+data class Maneuver(
+    val at: LatLon,
+    val alongRouteMeters: Double,
+    /** 轉向角度，負為左、正為右。 */
+    val angleDegrees: Float,
+    /**
+     * 是不是左轉類（含大左轉與斜左轉）。
+     *
+     * 本專案只對左轉有台灣專屬的規則 —— 待轉掛在左轉上，禁止左轉也是。
+     * 右轉與直行沿用一般導航的播報。
+     */
+    val isLeftTurn: Boolean,
+    /** 轉入那條路的標籤，形如 `highway=secondary oneway=yes`。**不含路名。** */
+    val wayTags: String,
+)
+
+/** 一條算好的路線。 */
 data class Route(
     val points: List<LatLon>,
     val distanceMeters: Int,
-    val turnCount: Int,
-)
+    val maneuvers: List<Maneuver>,
+) {
+    val turnCount: Int get() = maneuvers.size
+}
 
 /**
  * 用 BRouter 算白牌機車的路線（ADR-0016）。
@@ -76,17 +98,33 @@ class ScooterRouter(private val context: Context) {
         }
         val track = engine.foundTrack ?: return null
 
-        var turns = 0
-        for (i in track.nodes.indices) {
-            if (track.getVoiceHint(i) != null) turns++
+        val points = track.nodes.map {
+            LatLon(it.iLat / 1_000_000.0 - 90.0, it.iLon / 1_000_000.0 - 180.0)
         }
-        return Route(
-            points = track.nodes.map {
-                LatLon(it.iLat / 1_000_000.0 - 90.0, it.iLon / 1_000_000.0 - 180.0)
-            },
-            distanceMeters = track.distance,
-            turnCount = turns,
-        )
+
+        // 沿路線的累積距離。逐向導航要的是「沿路走多遠」而不是直線距離 ——
+        // 先算好一份，之後每次定位更新才不必重算整條。
+        val cumulative = DoubleArray(points.size)
+        for (i in 1 until points.size) {
+            cumulative[i] = cumulative[i - 1] + haversineMeters(points[i - 1], points[i])
+        }
+
+        val maneuvers = ArrayList<Maneuver>()
+        for (i in track.nodes.indices) {
+            val hint = track.getVoiceHint(i) ?: continue
+            // indexInTrack 由 BRouter 填，理論上一定落在範圍內；夾一次是因為
+            // 越界會是 crash 而不是錯誤的指示，而 crash 發生在騎乘中。
+            val index = VoiceHintAccess.indexInTrack(hint).coerceIn(points.indices)
+            maneuvers += Maneuver(
+                at = points[index],
+                alongRouteMeters = cumulative[index],
+                angleDegrees = VoiceHintAccess.angle(hint),
+                isLeftTurn = VoiceHintAccess.isLeftTurn(hint),
+                wayTags = VoiceHintAccess.wayTags(hint),
+            )
+        }
+
+        return Route(points = points, distanceMeters = track.distance, maneuvers = maneuvers)
     }
 
     /** BRouter 的整數座標：微度再加 180/90 的偏移，避免負數。 */

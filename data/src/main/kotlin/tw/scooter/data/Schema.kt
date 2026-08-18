@@ -129,8 +129,10 @@ object Schema {
         // 亂講的一句話。格式是 `lat,lon;lat,lon;…`，因為 SQLite 沒有幾何型別，
         // 而為了四筆資料引進空間擴充不划算。
         //
-        // way_ids 是給路線引擎事後驗證用的（ADR-0006 比對的是路網的邊，不是座標）。
-        // 兩種用途、兩種鍵，一起存比日後回頭重算便宜。
+        // way_ids **不是**事後驗證用的鍵。BRouter 不帶 OSM way 編號（rd5 是重新
+        // 編碼過的圖），所以 ADR-0006 的事後驗證只能用幾何 —— 也就是
+        // ProhibitedMatcher 的點到折線距離。這個欄位留著是為了將來自建 rd5
+        // 圖磚時，拿它當注入自訂標籤的鍵。
         """
         CREATE TABLE prohibited_segments (
             id          INTEGER PRIMARY KEY,
