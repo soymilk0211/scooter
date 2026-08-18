@@ -1,6 +1,17 @@
 ---
-status: accepted (supersedes ADR-0002)
+status: accepted (supersedes ADR-0002); its Android premise is challenged by ADR-0016
 ---
+
+> **2026-08-18：下面說的「Valhalla 的官方 Android 離線函式庫」不存在。**
+> 官方 README 只說它 "is also used on iOS and Android devices"，
+> 沒有 AAR、沒有 NDK build target、沒有 Android binding（Node.js 與 Python
+> bindings 都有文件，Android 沒有）。也就是說本決定的第一步其實是一段
+> 沒有文件、我們也沒有真機可驗的 NDK 交叉編譯工作。
+>
+> 下面的兩項實測（圖磚 309 MB、`motor_scooter` 確實避開國道）**仍然成立**，
+> 它們回答的是「Valhalla 這個引擎行不行」；不成立的是「它上不上得了 Android」。
+> 替代方案見 [ADR-0016](0016-brouter-instead-of-valhalla-on-device.md)。
+
 
 # 路線引擎跑在手機裡，不跑在伺服器裡
 
