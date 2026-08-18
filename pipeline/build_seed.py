@@ -26,7 +26,7 @@ SEED = BUILD / "scooter_seed.db"
 
 # 必須與 data/src/main/kotlin/tw/scooter/data/Schema.kt 保持一致。
 # 兩邊都改到才算改完 —— 結構不一致時 App 會在讀取種子檔時炸開。
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 CELL_DEGREES = 0.01  # 與 core-rules 的 Grid.CELL_DEGREES 相同
 
 CREATE = [
@@ -94,6 +94,31 @@ CREATE = [
     )""",
     "CREATE INDEX idx_sections_start ON enforcement_sections(start_cell)",
     "CREATE INDEX idx_sections_end ON enforcement_sections(end_cell)",
+    # 全面禁行機車的路段（geocode_prohibited.py）。**這是路線層的資料**：
+    # 這條路機車完全不能走，與「內側車道禁行」是兩回事。
+    #
+    # 存折線而不是起訖兩點：堤頂大道沿線比直線長 20%，兩點連線在中段會偏出去
+    # 一百多公尺，而誤報的內容是「你正走在禁行機車的路上」。
+    # 同時存 way_ids —— 折線給「騎士現在在哪」用，way 編號給路線引擎事後
+    # 驗證用（ADR-0006 比對的是路網的邊）。
+    """CREATE TABLE prohibited_segments (
+        id          INTEGER PRIMARY KEY,
+        road_name   TEXT    NOT NULL,
+        bearing     REAL    NOT NULL,
+        polyline    TEXT    NOT NULL,
+        way_ids     TEXT,
+        speed_limit INTEGER,
+        reason      TEXT,
+        updated_at  INTEGER NOT NULL
+    )""",
+    # 路段橫跨多個網格（一格約 1.1 公里，環河北路有 4.5 公里），所以不能像點位
+    # 那樣在主表放一個 cell 欄位 —— 那會讓騎在中段的人查不到。改用一張對照表，
+    # 把折線經過的每一格都登記進去。
+    """CREATE TABLE prohibited_cells (
+        cell       INTEGER NOT NULL,
+        segment_id INTEGER NOT NULL
+    )""",
+    "CREATE INDEX idx_prohibited_cells ON prohibited_cells(cell)",
     """CREATE TABLE observations (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
         lat              REAL    NOT NULL,
@@ -447,6 +472,34 @@ def main() -> int:
             )
             enforcement_count += 1
 
+    # 全面禁行機車的路段。只收 status 為 ok 的 —— suspect 的路口是靠幾何鄰近
+    # 判出來的，可能是立體交叉，而這份資料播錯的內容是「你正走在禁行的路上」。
+    prohibited_path = BUILD / "prohibited.json"
+    prohibited_count = 0
+    if prohibited_path.exists():
+        for seg in json.loads(prohibited_path.read_text(encoding="utf-8")):
+            if seg.get("status") != "ok":
+                continue
+            points = seg["polyline"]
+            cur = db.execute(
+                "INSERT INTO prohibited_segments (road_name, bearing, polyline, way_ids,"
+                " speed_limit, reason, updated_at) VALUES (?,?,?,?,?,?,?)",
+                (
+                    seg["road"], seg["bearing"],
+                    ";".join(f"{lat:.6f},{lon:.6f}" for lat, lon in points),
+                    ",".join(str(w) for w in seg.get("way_ids", [])),
+                    seg.get("speed_limit"), seg.get("reason"), 0,
+                ),
+            )
+            # 折線的節點是 OSM 的路徑節點，間距遠小於一格（1.1 公里），
+            # 所以逐點取格不會跳過中間的格子。
+            for cell in sorted({cell_of(lat, lon) for lat, lon in points}):
+                db.execute(
+                    "INSERT INTO prohibited_cells (cell, segment_id) VALUES (?,?)",
+                    (cell, cur.lastrowid),
+                )
+            prohibited_count += 1
+
     db.commit()
 
     if needs_review:
@@ -482,6 +535,7 @@ def main() -> int:
         print(f"    縣市 {city_code} 未登錄預設規則，{districts} 個行政區只有個別規則"
               f"（見 default_rules.py）")
     print(f"  執法點位  {enforcement_count} 筆")
+    print(f"  禁行路段  {prohibited_count} 筆（全面禁行機車，路線層）")
     print(f"  降級規則  {len(downgraded)} 筆（離開方向為機車禁行路段）")
     print(f"  實地查核  {verified} 筆（信心 100，蓋過自動推導），新增 {added} 筆")
     print(f"  影像判讀  一致 {image_agree} 筆、不一致 {len(image_conflicts)} 筆"
