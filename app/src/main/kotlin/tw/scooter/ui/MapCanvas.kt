@@ -64,8 +64,16 @@ fun MapCanvas(
     zoom: Double = 15.0,
     /** 全面禁行機車的路段，畫成紅線。空的就不畫。 */
     prohibited: List<List<LatLon>> = emptyList(),
-    /** 導航路線。路線引擎還沒上機，目前恆為空。 */
+    /** 導航路線。空的就不畫。 */
     route: List<LatLon> = emptyList(),
+    /**
+     * 長按地圖選目的地。
+     *
+     * 這是目前唯一的目的地輸入方式（決策檔案 D1）—— 我們沒有地名搜尋，
+     * 而 OSM 的台灣 POI 稀疏到自建搜尋會被當成壞掉。長按選點不需要任何後端，
+     * 對「我知道大概在哪」的情境夠用。
+     */
+    onDestinationPicked: (LatLon) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -95,6 +103,12 @@ fun MapCanvas(
                 ready.uiSettings.isZoomGesturesEnabled = true
                 ready.uiSettings.isDoubleTapGesturesEnabled = true
                 ready.uiSettings.isQuickZoomGesturesEnabled = true
+                // 長按選目的地。用長按而不是單擊：單擊在地圖上太容易誤觸，
+                // 而誤觸的後果是整條路線被換掉。
+                ready.addOnMapLongClickListener { point ->
+                    onDestinationPicked(LatLon(point.latitude, point.longitude))
+                    true
+                }
             }
         }
     }

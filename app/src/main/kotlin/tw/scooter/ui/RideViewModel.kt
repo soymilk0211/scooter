@@ -23,7 +23,9 @@ import tw.scooter.ui.theme.AppearanceMode
 import tw.scooter.ride.VoiceRemedy
 import tw.scooter.ride.VoiceStatus
 import tw.scooter.ride.performRemedy
+import tw.scooter.route.ScooterRouter
 import tw.scooter.rules.AlertCandidate
+import tw.scooter.rules.LatLon
 import tw.scooter.rules.TurnRule
 
 data class RideUiState(
@@ -82,6 +84,32 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             _prohibitedLines.value = lines
         }
     }
+
+    private val router by lazy { ScooterRouter(getApplication()) }
+
+    /** 正在算路線。畫面用它顯示「計算中」，避免使用者以為長按沒反應。 */
+    private val _routing = MutableStateFlow(false)
+    val routing: StateFlow<Boolean> = _routing.asStateFlow()
+
+    /**
+     * 設定目的地並算一條路線。
+     *
+     * 起點用騎士**當下的位置**，不讓使用者選 —— 導航的起點就是他人在的地方，
+     * 給一個可選的起點只會讓人選錯。沒有定位就算不了，這時什麼都不做，
+     * 因為畫面上本來就會顯示沒有定位。
+     */
+    fun onDestinationPicked(destination: LatLon) {
+        val here = RideRepository.state.value?.location ?: return
+        _routing.value = true
+        viewModelScope.launch {
+            // 台北市內實測約 280 毫秒、台北到台中約 2.7 秒 —— 一定要離開主執行緒。
+            val route = withContext(Dispatchers.IO) { router.route(here, destination) }
+            RideRepository.onRoute(route)
+            _routing.value = false
+        }
+    }
+
+    fun clearRoute() = RideRepository.onRoute(null)
 
     private val overlayMode = MutableStateFlow(false)
     private val maneuver = MutableStateFlow<Pair<String?, String?>>(null to null)

@@ -7,43 +7,11 @@ import btools.router.RoutingContext
 import btools.router.RoutingEngine
 import btools.router.VoiceHintAccess
 import tw.scooter.rules.LatLon
+import tw.scooter.rules.Maneuver
+import tw.scooter.rules.Route
 import tw.scooter.rules.haversineMeters
 
 private const val TAG = "ScooterRouter"
-
-/**
- * 路線上的一次轉向。
- *
- * **沒有路名。** BRouter 的 rd5 只存路由用得到的標籤，`name` 不在其中 ——
- * 它是路由引擎，不是圖資供應商。路名要另外的來源（見決策檔案 D5）。
- *
- * [alongRouteMeters] 是從起點沿著路線走到這裡的距離。導航跟隨要的是這個，
- * 不是直線距離 —— 騎士是沿著路走的。
- */
-data class Maneuver(
-    val at: LatLon,
-    val alongRouteMeters: Double,
-    /** 轉向角度，負為左、正為右。 */
-    val angleDegrees: Float,
-    /**
-     * 是不是左轉類（含大左轉與斜左轉）。
-     *
-     * 本專案只對左轉有台灣專屬的規則 —— 待轉掛在左轉上，禁止左轉也是。
-     * 右轉與直行沿用一般導航的播報。
-     */
-    val isLeftTurn: Boolean,
-    /** 轉入那條路的標籤，形如 `highway=secondary oneway=yes`。**不含路名。** */
-    val wayTags: String,
-)
-
-/** 一條算好的路線。 */
-data class Route(
-    val points: List<LatLon>,
-    val distanceMeters: Int,
-    val maneuvers: List<Maneuver>,
-) {
-    val turnCount: Int get() = maneuvers.size
-}
 
 /**
  * 用 BRouter 算白牌機車的路線（ADR-0016）。

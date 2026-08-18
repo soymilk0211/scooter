@@ -9,6 +9,9 @@ import tw.scooter.rules.EnforcementCandidate
 import tw.scooter.rules.LatLon
 import tw.scooter.rules.ProhibitedCandidate
 import tw.scooter.rules.RiderState
+import tw.scooter.rules.Route
+import tw.scooter.rules.RouteFollower
+import tw.scooter.rules.RouteProgress
 import tw.scooter.rules.TrackBuffer
 import tw.scooter.rules.TrackPoint
 import java.time.Instant
@@ -66,6 +69,26 @@ object RideRepository {
 
     fun onProhibited(candidate: ProhibitedCandidate?) {
         _prohibited.value = candidate
+    }
+
+    /** 當前導航路線。null 代表沒有在導航。 */
+    private val _route = MutableStateFlow<Route?>(null)
+    val route: StateFlow<Route?> = _route.asStateFlow()
+
+    /** 在路線上的進度。沒有路線、或還沒收到定位時為 null。 */
+    private val _progress = MutableStateFlow<RouteProgress?>(null)
+    val progress: StateFlow<RouteProgress?> = _progress.asStateFlow()
+
+    /**
+     * 跟隨器與路線是一組的，換路線就要換一個新的 —— 它記著游標，
+     * 沿用舊的會讓新路線的進度從舊路線的位置開始算。
+     */
+    private var follower: RouteFollower? = null
+
+    fun onRoute(newRoute: Route?) {
+        _route.value = newRoute
+        follower = newRoute?.let { RouteFollower(it) }
+        _progress.value = null
     }
 
     /**
@@ -144,6 +167,7 @@ object RideRepository {
             ),
         )
         refreshCanReport()
+        follower?.let { _progress.value = it.update(LatLon(location.latitude, location.longitude)) }
 
         val local = Instant.ofEpochMilli(at).atZone(zone)
         _state.value = RiderState(
@@ -169,6 +193,8 @@ object RideRepository {
         if (!running) {
             buffer.clear()
             _canReport.value = false
+            // 服務停了就不是在導航了。留著路線會讓畫面上有一條沒有人在跟隨的線。
+            onRoute(null)
             // 服務停了就沒人在檢查語音了，先前的結論隨即過期。留著它會讓騎士
             // 看到一則沒有東西在維護的警告，或更糟 —— 一則早就不成立的安心。
             _voiceStatus.value = VoiceStatus.CHECKING

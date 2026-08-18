@@ -165,10 +165,13 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                     .onSizeChanged { canvas = it },
             ) {
                 val prohibitedLines by viewModel.prohibitedLines.collectAsState()
+                val route by tw.scooter.ride.RideRepository.route.collectAsState()
                 MapCanvas(
                     Modifier.fillMaxSize(),
                     dark = settings.appearance.resolvesToDark(),
                     prohibited = prohibitedLines,
+                    route = route?.points.orEmpty(),
+                    onDestinationPicked = viewModel::onDestinationPicked,
                 )
 
                 // 用 Column 讓選單按鈕自然排在回報列下方。先前用固定位移量去猜
