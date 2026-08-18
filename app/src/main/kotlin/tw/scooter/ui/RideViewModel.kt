@@ -207,6 +207,11 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
      * 背景音量衰減。只寫進設定，不直接改 [RideRepository] ——
      * 服務自己訂閱同一份設定，讓「誰是權威」只有一個答案。
      */
+    /** 北方朝上 ⇄ 車頭朝上。落地，因為這是個人偏好不是當下狀態。 */
+    fun onOrientationToggled(headingUp: Boolean) {
+        viewModelScope.launch { SettingsStore.setHeadingUp(getApplication(), headingUp) }
+    }
+
     fun onDuckingChanged(enabled: Boolean) {
         viewModelScope.launch { SettingsStore.setDuckOthers(getApplication(), enabled) }
     }

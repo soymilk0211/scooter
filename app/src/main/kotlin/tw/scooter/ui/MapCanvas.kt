@@ -31,6 +31,12 @@ import tw.scooter.rules.LatLon
 
 private const val TAG = "MapCanvas"
 
+/** 方位角變化小於這個角度就不轉地圖，避免 GPS 抖動讓畫面持續微晃。 */
+private const val ROTATE_STEP_DEGREES = 5.0
+
+/** 轉動的動畫長度。太快會像跳一下，太慢會跟不上轉彎。 */
+private const val ROTATE_ANIMATION_MS = 600
+
 /**
  * 把折線餵進樣式裡既有的 GeoJSON source。
  *
@@ -74,6 +80,16 @@ fun MapCanvas(
      * 對「我知道大概在哪」的情境夠用。
      */
     onDestinationPicked: (LatLon) -> Unit = {},
+    /**
+     * 地圖跟著車頭轉。
+     *
+     * 手動旋轉手勢仍然關著（見下面的 `isRotateGesturesEnabled`）——
+     * 騎乘中誤觸把方向轉歪，比沒有旋轉更糟。這裡是**程式驅動**的旋轉，
+     * 使用者只能用按鈕切換模式，不能用手指亂轉。
+     */
+    headingUp: Boolean = false,
+    /** 騎士當下的行進方位角。[headingUp] 為 true 時用它轉地圖。 */
+    bearing: Double? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -127,6 +143,20 @@ fun MapCanvas(
             style = ready
             Log.i(TAG, "style loaded dark=$dark layers=${ready.layers.size}")
         }
+    }
+
+    // 車頭朝上時把相機轉到行進方向；北方朝上時轉回 0。
+    //
+    // 只在方位角變化超過門檻時才動，否則 GPS 的抖動會讓整張地圖持續微幅
+    // 晃動 —— 那在騎乘中看比不轉還累。停止時 bearing 是 null，維持不動：
+    // 停紅燈時地圖跟著車身晃是最沒有意義的動畫。
+    LaunchedEffect(map, headingUp, bearing?.let { (it / ROTATE_STEP_DEGREES).toInt() }) {
+        val target = map ?: return@LaunchedEffect
+        val want = if (headingUp) bearing ?: return@LaunchedEffect else 0.0
+        target.animateCamera(
+            CameraUpdateFactory.bearingTo(want),
+            ROTATE_ANIMATION_MS,
+        )
     }
 
     LaunchedEffect(style, prohibited, route) {

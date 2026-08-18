@@ -23,6 +23,14 @@ data class Settings(
     val appearance: AppearanceMode = AppearanceMode.DARK,
     val duckOthers: Boolean = true,
     /**
+     * 地圖是不是跟著車頭轉。false 為北方朝上。
+     *
+     * 預設北方朝上：那是改動前的行為，而「車頭朝上比較好」這件事
+     * 沒有真機可以驗證 —— 暈眩感因人而異，預設值不該靠猜。
+     * 兩種都留著，畫面上有按鈕當場切。
+     */
+    val headingUp: Boolean = false,
+    /**
      * 時速圓圈被拖到哪裡，畫面左上角起算的像素。兩個都是 NaN 代表沒拖過。
      *
      * 存絕對像素而不是比例，是因為這支 App 鎖直向、單一裝置的畫面尺寸不會變。
@@ -36,6 +44,7 @@ private val Context.settingsFile: DataStore<Preferences> by preferencesDataStore
 
 private val APPEARANCE = stringPreferencesKey("appearance")
 private val DUCK_OTHERS = booleanPreferencesKey("duck_others")
+private val HEADING_UP = booleanPreferencesKey("heading_up")
 private val DIAL_X = floatPreferencesKey("dial_x")
 private val DIAL_Y = floatPreferencesKey("dial_y")
 
@@ -51,6 +60,7 @@ internal fun Preferences.toSettings(): Settings {
         appearance = AppearanceMode.entries.firstOrNull { it.name == this[APPEARANCE] }
             ?: fallback.appearance,
         duckOthers = this[DUCK_OTHERS] ?: fallback.duckOthers,
+        headingUp = this[HEADING_UP] ?: fallback.headingUp,
         dialX = this[DIAL_X] ?: fallback.dialX,
         dialY = this[DIAL_Y] ?: fallback.dialY,
     )
@@ -79,6 +89,10 @@ object SettingsStore {
 
     suspend fun setDuckOthers(context: Context, enabled: Boolean) {
         context.applicationContext.settingsFile.edit { it[DUCK_OTHERS] = enabled }
+    }
+
+    suspend fun setHeadingUp(context: Context, enabled: Boolean) {
+        context.applicationContext.settingsFile.edit { it[HEADING_UP] = enabled }
     }
 
     /**

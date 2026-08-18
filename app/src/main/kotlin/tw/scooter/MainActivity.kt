@@ -53,6 +53,7 @@ import tw.scooter.ui.DialPosition
 import tw.scooter.ui.MapCanvas
 import tw.scooter.ui.SpeedDial
 import tw.scooter.ui.MenuButton
+import tw.scooter.ui.OrientationButton
 import tw.scooter.ui.ReportOutcome
 import tw.scooter.ui.RideViewModel
 import tw.scooter.ui.SettingsDrawer
@@ -165,6 +166,8 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                     .onSizeChanged { canvas = it },
             ) {
                 val prohibitedLines by viewModel.prohibitedLines.collectAsState()
+                val rider by tw.scooter.ride.RideRepository.state.collectAsState()
+                val riderBearing = rider?.bearing
                 val route by tw.scooter.ride.RideRepository.route.collectAsState()
                 MapCanvas(
                     Modifier.fillMaxSize(),
@@ -172,6 +175,8 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                     prohibited = prohibitedLines,
                     route = route?.points.orEmpty(),
                     onDestinationPicked = viewModel::onDestinationPicked,
+                    headingUp = settings.headingUp,
+                    bearing = riderBearing,
                 )
 
                 // 用 Column 讓選單按鈕自然排在回報列下方。先前用固定位移量去猜
@@ -201,6 +206,15 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                             onReport = viewModel::onReport,
                         )
                     }
+                    // 方向切換排在選單按鈕旁邊。它是騎乘中會想改的東西 ——
+                    // 進到不熟的區域想看車頭朝上、要抓方位時想看北方朝上 ——
+                    // 而騎乘中沒有人會去翻設定抽屜。
+                    OrientationButton(
+                        headingUp = settings.headingUp,
+                        bearing = riderBearing,
+                        onToggle = { viewModel.onOrientationToggled(!settings.headingUp) },
+                        modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                    )
                     MenuButton(
                         onClick = { scope.launch { drawerState.open() } },
                         modifier = Modifier
