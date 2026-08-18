@@ -20,10 +20,17 @@ object AlertPhrases {
         TurnRule.DIRECT -> "前方路口，機車可直接左轉"
         TurnRule.INNER_LANE -> "前方路口，請走內側左轉專用道"
         TurnRule.OUTER_LANE -> "前方路口，請走外側左轉專用道"
+        TurnRule.NO_LEFT_TURN -> "前方路口禁止左轉"
         TurnRule.UNKNOWN -> "前方路口即將左轉，請依現場標誌指示行駛"
     }
 
-    /** 預先合成的對象。UNKNOWN 也要 —— 資料缺漏時它是最常播的一句。 */
+    /**
+     * 預先合成的對象。UNKNOWN 也要 —— 資料缺漏時它是最常播的一句。
+     *
+     * **新增一種規定不必動 [VERSION]。** 快取檔名帶 rule id，
+     * 舊的四句沒有改動就仍然有效，新的那句第一次啟動時補合成即可。
+     * VERSION 是給「改了既有文案」用的。
+     */
     val all: List<TurnRule> = TurnRule.entries.toList()
 
     fun cacheName(rule: TurnRule): String = "alert_v${VERSION}_${rule.id}.wav"

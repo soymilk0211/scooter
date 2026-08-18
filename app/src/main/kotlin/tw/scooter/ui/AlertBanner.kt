@@ -75,5 +75,6 @@ private fun spokenText(rule: TurnRule): String = when (rule) {
     TurnRule.DIRECT -> "前方路口，機車可直接左轉"
     TurnRule.INNER_LANE -> "前方路口，請走內側左轉專用道"
     TurnRule.OUTER_LANE -> "前方路口，請走外側左轉專用道"
+    TurnRule.NO_LEFT_TURN -> "前方路口禁止左轉"
     TurnRule.UNKNOWN -> "前方路口即將左轉，請依現場標誌指示行駛"
 }

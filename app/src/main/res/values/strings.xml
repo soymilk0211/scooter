@@ -11,6 +11,8 @@
     <string name="report_outer">外側</string>
     <string name="report_outer_sub">專用道</string>
 
+    <string name="report_no_left">禁止</string>
+    <string name="report_no_left_sub">左轉</string>
     <string name="report_prompt">前方路口是什麼規則？</string>
     <string name="no_maneuver">尚未取得路口資訊</string>
 

@@ -72,6 +72,23 @@ fun TopReportBar(
                 onReport(TurnRule.OUTER_LANE)
             }
         }
+
+        // 禁止左轉單獨一列，而且是紅的。
+        //
+        // **它與上面四個不是同一類東西。** 上面四個回答「怎麼轉」，
+        // 它回答「能不能轉」—— 前者播錯是慢一點或吃單，後者播錯會讓所有人
+        // 在那個路口繞遠路，而且沒有人會抱怨，因為繞遠的路線看起來仍然合法。
+        // 排在同一列會讓它看起來只是第五個選項，而它不是。
+        Row(modifier = Modifier.padding(top = 8.dp)) {
+            ReportButton(
+                R.string.report_no_left,
+                R.string.report_no_left_sub,
+                Modifier.fillMaxWidth(),
+                face = ScooterColors.Amber.copy(alpha = 0.18f),
+            ) {
+                onReport(TurnRule.NO_LEFT_TURN)
+            }
+        }
     }
 }
 
@@ -117,13 +134,14 @@ private fun ReportButton(
     labelRes: Int,
     subLabelRes: Int,
     modifier: Modifier = Modifier,
+    face: androidx.compose.ui.graphics.Color? = null,
     onClick: () -> Unit,
 ) {
     Column(
         modifier = modifier
             .height(64.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(face ?: MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = onClick),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
