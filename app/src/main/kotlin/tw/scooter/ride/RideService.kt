@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import tw.scooter.MainActivity
 import tw.scooter.data.ScooterDatabase
+import tw.scooter.rules.ManeuverAnnouncer
 import tw.scooter.rules.ProhibitedThresholds
 import tw.scooter.settings.SettingsStore
 import tw.scooter.R
@@ -57,6 +58,12 @@ class RideService : Service() {
 
     private val voice by lazy { AlertVoice(this) }
 
+    /**
+     * 轉向播報的時機判定。**換路線要 reset** —— 它記著哪幾則播過了，
+     * 沿用舊的會讓新路線的第一個轉向被當成播過的。
+     */
+    private val announcer = ManeuverAnnouncer()
+
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val location = result.lastLocation ?: return
@@ -87,6 +94,13 @@ class RideService : Service() {
                     RideRepository.onProhibited(alerts.prohibited)
                 }
                 alerts.prohibited?.let { voice.speakProhibited(it.segment.roadName) }
+
+                // 轉向指示。放在最後，因為它是導航中最頻繁的一種播報 ——
+                // 前面幾種都是偶發的，撞在一起時讓它們先講完整。
+                announcer.update(RideRepository.progress.value, state.speedKmh)?.let { hint ->
+                    AlertPhrases.maneuver(hint.maneuver.angleDegrees, hint.distanceBucketMeters)
+                        ?.let(voice::speakManeuver)
+                }
             }
         }
     }
@@ -101,6 +115,7 @@ class RideService : Service() {
         requestUpdates()
         checkVoice()
         followSettings()
+        followRoute()
         RideRepository.onServiceStateChanged(running = true)
     }
 
@@ -128,6 +143,13 @@ class RideService : Service() {
                 .map { it.duckOthers }
                 .distinctUntilChanged()
                 .collect { RideRepository.setDuckOthers(it) }
+        }
+    }
+
+    /** 換一條路線就把播報紀錄清掉，否則新路線的第一個轉向會被當成播過的。 */
+    private fun followRoute() {
+        scope.launch {
+            RideRepository.route.collect { announcer.reset() }
         }
     }
 

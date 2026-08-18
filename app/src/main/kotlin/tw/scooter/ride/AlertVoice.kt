@@ -294,6 +294,27 @@ class AlertVoice(private val context: Context) {
         )
     }
 
+    /**
+     * 轉向指示。
+     *
+     * **目前走即時 TTS，但它不需要如此。** 沒有路名之後句子集合是有限的
+     * （幾個距離級距 × 左右），全部預先合成就沒有 2.8–3.6 秒的首句延遲 ——
+     * 而五秒前那一則吸收不了那個延遲。預合成還沒做，這裡先讓整條路徑會出聲；
+     * 換成預合成時只要改這個函式，呼叫端不必動。
+     *
+     * `QUEUE_FLUSH` 而不是 `QUEUE_ADD`：轉向指示過期得很快，
+     * 上一則還沒講完就代表它已經不重要了。
+     */
+    fun speakManeuver(phrase: String) {
+        publish()
+        if (!engineUsable) {
+            Log.w(TAG, "語音不可用，略過轉向播報：$engineStatus")
+            return
+        }
+        requestFocus()
+        tts?.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "maneuver_${System.nanoTime()}")
+    }
+
     private fun play(file: File) {
         runCatching {
             player?.release()

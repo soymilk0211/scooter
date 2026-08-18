@@ -1,5 +1,7 @@
 package tw.scooter.ride
 
+import kotlin.math.abs
+
 import tw.scooter.rules.TurnRule
 
 /**
@@ -55,6 +57,29 @@ object AlertPhrases {
      * 路名沒有就不講路名。「這條路」在騎士的處境裡已經沒有歧義了，
      * 硬補一個可能錯的名字只會讓他懷疑我們講的是不是別條路。
      */
+    /**
+     * 轉向播報。**沒有路名**（決策檔案 D5：路線引擎不提供）。
+     *
+     * 回傳 null 代表這一則不值得開口 —— 微幅的靠左靠右（角度小於
+     * [MIN_ANNOUNCED_ANGLE]）在騎士的感受上就是直行，播出來只會變成噪音，
+     * 而噪音會讓他學會忽略真正重要的那幾則。
+     *
+     * **判斷「有沒有話講」在這裡，判斷「什麼時候講」在 `ManeuverAnnouncer`。**
+     * 兩件事分開，因為時機是幾何問題、措辭是語言問題。
+     *
+     * 距離只有幾個級距（[Announcement.distanceBucketMeters] 給的），
+     * 所以整個句子集合是有限的，可以全部預先合成 —— 那正是不講路名換來的好處。
+     */
+    fun maneuver(angleDegrees: Float, distanceBucketMeters: Int?): String? {
+        if (abs(angleDegrees) < MIN_ANNOUNCED_ANGLE) return null
+        val direction = if (angleDegrees < 0) "左轉" else "右轉"
+        return if (distanceBucketMeters == null) "這裡$direction"
+        else "前方 $distanceBucketMeters 公尺，$direction"
+    }
+
+    /** 小於這個角度的轉向不播報。 */
+    const val MIN_ANNOUNCED_ANGLE = 20f
+
     fun prohibitedRoad(roadName: String?): String =
         if (roadName.isNullOrBlank()) "這條路禁行機車，請於下個路口改道"
         else "$roadName 禁行機車，請於下個路口改道"
