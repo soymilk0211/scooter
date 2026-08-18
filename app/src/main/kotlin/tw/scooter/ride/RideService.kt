@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import tw.scooter.MainActivity
 import tw.scooter.data.ScooterDatabase
+import tw.scooter.rules.ProhibitedThresholds
 import tw.scooter.settings.SettingsStore
 import tw.scooter.R
 
@@ -43,13 +44,26 @@ class RideService : Service() {
 
     private val client by lazy { LocationServices.getFusedLocationProviderClient(this) }
 
-    private val engine by lazy { AlertEngine(ScooterDatabase.open(this)) }
+    /**
+     * 規則資料庫。**在 [onCreate] 於 IO 執行緒開好**，開好之前是 null。
+     *
+     * 先前這裡是 `by lazy`，於是第一次開檔發生在定位回呼裡 —— 也就是主執行緒、
+     * 騎乘途中。開檔會做兩件不能在那個時機做的事：把種子資料庫複製到可寫位置
+     * （檔案 I/O，而種子檔還會隨路網資料變大），以及跑 schema 遷移。
+     * **遷移失敗發生在騎乘途中是最糟的時機**，主執行緒上的檔案複製則是 ANR。
+     */
+    @Volatile
+    private var engine: AlertEngine? = null
+
     private val voice by lazy { AlertVoice(this) }
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val location = result.lastLocation ?: return
+            // 軌跡照收 —— 資料庫還沒開好不代表這一秒的位置不算數，
+            // 停等時的進入方位角正是從這些點推得的。
             RideRepository.onLocation(location)
+            val engine = engine ?: return
             // 判定緊接在定位之後，同一條執行緒 —— 路口只有幾秒的判定窗，
             // 排到別的排程器上等待是拿安全換架構整潔。
             RideRepository.state.value?.let { state ->
@@ -66,6 +80,13 @@ class RideService : Service() {
                     RideRepository.onAlert(alert)
                     voice.speak(alert.rule.rule)
                 }
+                // 禁行路段是**狀態**：沒命中就要清掉，否則騎士離開那條路之後
+                // 畫面上還掛著「這條路禁行機車」—— 那比沒講更糟。
+                // 但只有真的判過才清（速度過低時 matcher 不出聲，那不是「離開了」）。
+                if (state.speedKmh >= ProhibitedThresholds.MIN_SPEED_KMH) {
+                    RideRepository.onProhibited(alerts.prohibited)
+                }
+                alerts.prohibited?.let { voice.speakProhibited(it.segment.roadName) }
             }
         }
     }
@@ -76,10 +97,23 @@ class RideService : Service() {
         super.onCreate()
         createChannel()
         startInForeground()
+        openDatabase()
         requestUpdates()
         checkVoice()
         followSettings()
         RideRepository.onServiceStateChanged(running = true)
+    }
+
+    /**
+     * 開資料庫（必要時安裝種子、跑遷移），在 IO 執行緒上。
+     *
+     * 開檔通常只要幾十毫秒，而騎士按下開始後的頭幾秒一定是靜止的，
+     * 所以「還沒開好就先不判定」不會漏掉任何路口。
+     */
+    private fun openDatabase() {
+        scope.launch(Dispatchers.IO) {
+            engine = AlertEngine(ScooterDatabase.open(applicationContext))
+        }
     }
 
     /**

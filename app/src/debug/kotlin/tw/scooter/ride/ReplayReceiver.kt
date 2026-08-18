@@ -99,7 +99,12 @@ class ReplayReceiver : BroadcastReceiver() {
                 fired = true
                 RideRepository.onAlert(alert)
                 voice.speak(alert.rule.rule)
-                Log.i(TAG, "警示觸發！距離 ${"%.0f".format(alert.distanceMeters)} m，" +
+                // 秒數與時窗一起印。剛性窗是用**當下時速**推出來的，只看公尺數
+                // 分不出「窗剛好在這裡」還是「窗開太大」—— 真機驗證要對的是秒數。
+                Log.i(TAG, "警示觸發！距離 ${"%.0f".format(alert.distanceMeters)} m" +
+                    "（${"%.1f".format(alert.secondsAway(state.speedKmh))} 秒後抵達，" +
+                    "時速 ${"%.0f".format(state.speedKmh)} 的時窗是 " +
+                    "${"%.0f".format(AlertThresholds.leadDistanceMeters(state.speedKmh))} m），" +
                     "方位差 ${"%.1f".format(alert.bearingDelta)}°，" +
                     "規定 ${alert.rule.rule}，路口 ${alert.rule.entryRoadName} ➔ " +
                     alert.rule.exitRoadName)

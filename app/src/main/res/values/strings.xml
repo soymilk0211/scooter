@@ -11,7 +11,6 @@
     <string name="report_outer">外側</string>
     <string name="report_outer_sub">專用道</string>
 
-    <string name="report_locked">停車後即可回報</string>
     <string name="report_prompt">前方路口是什麼規則？</string>
     <string name="no_maneuver">尚未取得路口資訊</string>
 

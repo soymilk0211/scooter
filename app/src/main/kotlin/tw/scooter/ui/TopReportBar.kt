@@ -27,15 +27,16 @@ import tw.scooter.ui.theme.ScooterColors
 /**
  * 頂部回報列。
  *
- * 兩項安全規則寫死在這裡，不做成設定：
- * - 車速高於 10 km/h 時四顆按鈕鎖定，避免騎乘中操作。
- * - 進入懸浮視窗模式時整列隱藏（由呼叫端決定是否組合本元件）。
+ * **本元件只在騎士真的停下來時才會被組合進畫面**（由呼叫端判斷），所以裡面
+ * 沒有鎖定狀態。這是刻意的：一顆變灰的按鈕仍然邀請人去按，而騎乘中按下去
+ * 拿到的方位角可能正記在轉彎的半途 —— 那會把規則掛到一個不存在的來向上。
+ *
+ * 另一項規則同樣留在呼叫端：進入懸浮視窗模式時整列隱藏。
  */
 @Composable
 fun TopReportBar(
     entryRoad: String?,
     exitRoad: String?,
-    unlocked: Boolean,
     onReport: (TurnRule) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -51,25 +52,23 @@ fun TopReportBar(
         ManeuverLine(entryRoad, exitRoad)
 
         Text(
-            text = stringResource(
-                if (unlocked) R.string.report_prompt else R.string.report_locked,
-            ),
+            text = stringResource(R.string.report_prompt),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ReportButton(R.string.report_hook, R.string.report_hook_sub, unlocked, Modifier.weight(1f)) {
+            ReportButton(R.string.report_hook, R.string.report_hook_sub, Modifier.weight(1f)) {
                 onReport(TurnRule.HOOK)
             }
-            ReportButton(R.string.report_direct, R.string.report_direct_sub, unlocked, Modifier.weight(1f)) {
+            ReportButton(R.string.report_direct, R.string.report_direct_sub, Modifier.weight(1f)) {
                 onReport(TurnRule.DIRECT)
             }
-            ReportButton(R.string.report_inner, R.string.report_inner_sub, unlocked, Modifier.weight(1f)) {
+            ReportButton(R.string.report_inner, R.string.report_inner_sub, Modifier.weight(1f)) {
                 onReport(TurnRule.INNER_LANE)
             }
-            ReportButton(R.string.report_outer, R.string.report_outer_sub, unlocked, Modifier.weight(1f)) {
+            ReportButton(R.string.report_outer, R.string.report_outer_sub, Modifier.weight(1f)) {
                 onReport(TurnRule.OUTER_LANE)
             }
         }
@@ -117,33 +116,28 @@ private fun ManeuverLine(entryRoad: String?, exitRoad: String?) {
 private fun ReportButton(
     labelRes: Int,
     subLabelRes: Int,
-    enabled: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val face = if (enabled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-    val label = if (enabled) MaterialTheme.colorScheme.onSurface else ScooterColors.TextDisabled
-    val sub = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else ScooterColors.TextDisabled
-
     Column(
         modifier = modifier
             .height(64.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(face)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             text = stringResource(labelRes),
             style = MaterialTheme.typography.titleMedium,
-            color = label,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
         Text(
             text = stringResource(subLabelRes),
             style = MaterialTheme.typography.labelSmall,
-            color = sub,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
     }

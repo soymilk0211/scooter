@@ -47,6 +47,43 @@ fun destination(from: LatLon, bearingDeg: Double, distanceMeters: Double): LatLo
 }
 
 /**
+ * 點到線段的最短距離，公尺。
+ *
+ * 用本地平面近似而不是球面幾何：本專案用到它的尺度是數十公尺到數公里，
+ * 那個範圍內的誤差遠小於 GPS 本身，而球面上的「點到大圓弧距離」要多寫
+ * 三十行三角函數去換一個量不出來的差別。
+ */
+fun distanceToSegmentMeters(p: LatLon, a: LatLon, b: LatLon): Double {
+    val mx = 111_320.0 * cos(Math.toRadians(p.lat))
+    val my = 110_540.0
+    // 以 p 為原點，線段兩端換算成公尺。
+    val ax = (a.lon - p.lon) * mx
+    val ay = (a.lat - p.lat) * my
+    val bx = (b.lon - p.lon) * mx
+    val by = (b.lat - p.lat) * my
+    val dx = bx - ax
+    val dy = by - ay
+    val length2 = dx * dx + dy * dy
+    if (length2 <= 0.0) return sqrt(ax * ax + ay * ay)
+    // 投影參數夾在 [0,1]：落在線段之外時，最近點就是端點。
+    val t = ((-ax * dx - ay * dy) / length2).coerceIn(0.0, 1.0)
+    val cx = ax + t * dx
+    val cy = ay + t * dy
+    return sqrt(cx * cx + cy * cy)
+}
+
+/** 點到折線的最短距離，公尺。折線少於兩點時回傳 [Double.MAX_VALUE]。 */
+fun distanceToPolylineMeters(p: LatLon, polyline: List<LatLon>): Double {
+    if (polyline.size < 2) return Double.MAX_VALUE
+    var best = Double.MAX_VALUE
+    for (i in 0 until polyline.size - 1) {
+        val d = distanceToSegmentMeters(p, polyline[i], polyline[i + 1])
+        if (d < best) best = d
+    }
+    return best
+}
+
+/**
  * 兩方位角的最小夾角，0..180 度。
  *
  * 359 度與 1 度相差 2 度，不是 358 度 —— 直接相減是這類比對最常見的錯誤。

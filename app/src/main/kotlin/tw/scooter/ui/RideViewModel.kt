@@ -24,7 +24,6 @@ import tw.scooter.ride.VoiceRemedy
 import tw.scooter.ride.VoiceStatus
 import tw.scooter.ride.performRemedy
 import tw.scooter.rules.AlertCandidate
-import tw.scooter.rules.AlertThresholds
 import tw.scooter.rules.TurnRule
 
 data class RideUiState(
@@ -42,10 +41,17 @@ data class RideUiState(
     val voiceWarningDismissed: Boolean = false,
     /** 時速圓圈用來上色的速限。null 代表這一帶沒有速限資料，圓圈就不評價。 */
     val speedLimitKmh: Int? = null,
+    /**
+     * 回報介面是否該出現：**已連續靜止，而且取得到進入方位角**。
+     *
+     * 條件是真的停下來，不是「速度夠慢」。舊版用時速 10 公里當門檻把按鈕變灰，
+     * 有兩個問題：變灰的按鈕仍然邀請人去按；而時速 9 公里還在滑行的騎士，
+     * 他當下記到的方位角可能正在轉彎的半途，那會把規則掛到一個不存在的來向上。
+     *
+     * 判定在 core-rules 的 `TrackBuffer`，UI 不自行設定。
+     */
+    val reportUnlocked: Boolean = false,
 ) {
-    /** 回報按鈕僅在近乎靜止時解鎖 —— 門檻定義於 core-rules，UI 不自行設定。 */
-    val reportUnlocked: Boolean
-        get() = speedKmh <= AlertThresholds.REPORT_UNLOCK_MAX_SPEED_KMH
 
     val showVoiceWarning: Boolean
         get() = voiceStatus.needsWarning && !voiceWarningDismissed
@@ -57,6 +63,25 @@ enum class ReportOutcome { SAVED, NO_BEARING }
 class RideViewModel(app: Application) : AndroidViewModel(app) {
 
     private val database by lazy { ScooterDatabase.open(getApplication()) }
+
+    /**
+     * 地圖上要畫的禁行路段折線。
+     *
+     * 只讀一次就夠 —— 這份資料只會隨種子庫或同步更新，而那兩件事都伴隨重啟。
+     * 讀在 IO 執行緒上：第一次觸碰資料庫會安裝種子檔（複製檔案），
+     * 放在主執行緒上是 ANR。
+     */
+    private val _prohibitedLines = MutableStateFlow<List<List<tw.scooter.rules.LatLon>>>(emptyList())
+    val prohibitedLines: StateFlow<List<List<tw.scooter.rules.LatLon>>> = _prohibitedLines.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val lines = withContext(Dispatchers.IO) {
+                runCatching { database.allProhibited().map { it.polyline } }.getOrDefault(emptyList())
+            }
+            _prohibitedLines.value = lines
+        }
+    }
 
     private val overlayMode = MutableStateFlow(false)
     private val maneuver = MutableStateFlow<Pair<String?, String?>>(null to null)
@@ -104,11 +129,13 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         RideRepository.voiceStatus,
         dismissedVoiceStatus,
         RideRepository.speedLimit,
-    ) { base, voice, dismissed, limit ->
+        RideRepository.canReport,
+    ) { base, voice, dismissed, limit, canReport ->
         base.copy(
             voiceStatus = voice,
             voiceWarningDismissed = dismissed == voice,
             speedLimitKmh = limit,
+            reportUnlocked = canReport,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RideUiState())
 

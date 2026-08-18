@@ -270,6 +270,30 @@ class AlertVoice(private val context: Context) {
         tts?.speak(phrase, TextToSpeech.QUEUE_ADD, null, "enforcement_${System.nanoTime()}")
     }
 
+    /**
+     * 全面禁行機車的路段。與測速一樣走即時 TTS，理由也一樣：
+     * 它是**狀態**不是接近事件，慢三秒不影響它有用 —— 騎士接下來好幾公里
+     * 都還在那條路上。
+     *
+     * **措辭刻意是提醒不是指控。** 這個判定是「點到折線的距離 + 方位角」，
+     * 分不出垂直分離的道路（環河北路正上方就是環河快速道路），
+     * 我們沒有把握到可以說「你違規了」的程度。
+     */
+    fun speakProhibited(roadName: String) {
+        publish()
+        if (!engineUsable) {
+            Log.w(TAG, "語音不可用，略過禁行播報：$engineStatus")
+            return
+        }
+        requestFocus()
+        tts?.speak(
+            AlertPhrases.prohibitedRoad(roadName),
+            TextToSpeech.QUEUE_ADD,
+            null,
+            "prohibited_${System.nanoTime()}",
+        )
+    }
+
     private fun play(file: File) {
         runCatching {
             player?.release()

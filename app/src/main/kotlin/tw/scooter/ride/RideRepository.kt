@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import tw.scooter.rules.AlertCandidate
 import tw.scooter.rules.EnforcementCandidate
 import tw.scooter.rules.LatLon
+import tw.scooter.rules.ProhibitedCandidate
 import tw.scooter.rules.RiderState
 import tw.scooter.rules.TrackBuffer
 import tw.scooter.rules.TrackPoint
@@ -29,6 +30,23 @@ object RideRepository {
     private val _serviceRunning = MutableStateFlow(false)
     val serviceRunning: StateFlow<Boolean> = _serviceRunning.asStateFlow()
 
+    /**
+     * 現在能不能回報。回報介面只在這個條件成立時出現。
+     *
+     * 兩個條件缺一不可：**真的停下來了**，而且**取得到進入方位角**。
+     * 少了後者按鈕會出現然後必定失敗 —— 那比按鈕不出現更糟，因為騎士會以為
+     * 是自己按錯了，在一個他只有幾秒的空檔裡反覆試。
+     *
+     * 兩者都判在 [TrackBuffer]（要看連續幾個點，不是單一個速度值），
+     * 這裡只是把結論攤成 UI 讀得到的流。
+     */
+    private val _canReport = MutableStateFlow(false)
+    val canReport: StateFlow<Boolean> = _canReport.asStateFlow()
+
+    private fun refreshCanReport() {
+        _canReport.value = buffer.isStopped() && buffer.approachBearing() != null
+    }
+
     /** 當前應播報的警示。語音尚未接上，UI 先直接顯示它以便驗證。 */
     private val _alert = MutableStateFlow<AlertCandidate?>(null)
     val alert: StateFlow<AlertCandidate?> = _alert.asStateFlow()
@@ -36,6 +54,19 @@ object RideRepository {
     /** 最近一次的測速警示，供畫面顯示。 */
     private val _enforcement = MutableStateFlow<EnforcementCandidate?>(null)
     val enforcement: StateFlow<EnforcementCandidate?> = _enforcement.asStateFlow()
+
+    /**
+     * 騎士正走在一段全面禁行機車的路上。
+     *
+     * 與其他警示不同，這一個是**狀態**：離開那條路才該消失，所以它不會自己
+     * 過期，由 [onProhibited] 傳 null 清掉。
+     */
+    private val _prohibited = MutableStateFlow<ProhibitedCandidate?>(null)
+    val prohibited: StateFlow<ProhibitedCandidate?> = _prohibited.asStateFlow()
+
+    fun onProhibited(candidate: ProhibitedCandidate?) {
+        _prohibited.value = candidate
+    }
 
     /**
      * 時速圓圈用來上色的速限。null 代表這一帶沒有速限資料 —— 圓圈那時只顯示
@@ -95,6 +126,7 @@ object RideRepository {
                 epochMillis = state.epochMillis,
             ),
         )
+        refreshCanReport()
         _state.value = state
     }
 
@@ -111,6 +143,7 @@ object RideRepository {
                 epochMillis = at,
             ),
         )
+        refreshCanReport()
 
         val local = Instant.ofEpochMilli(at).atZone(zone)
         _state.value = RiderState(
@@ -135,6 +168,7 @@ object RideRepository {
         _serviceRunning.value = running
         if (!running) {
             buffer.clear()
+            _canReport.value = false
             // 服務停了就沒人在檢查語音了，先前的結論隨即過期。留著它會讓騎士
             // 看到一則沒有東西在維護的警告，或更糟 —— 一則早就不成立的安心。
             _voiceStatus.value = VoiceStatus.CHECKING

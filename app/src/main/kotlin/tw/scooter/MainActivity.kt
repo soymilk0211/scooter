@@ -164,7 +164,12 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                     .fillMaxSize()
                     .onSizeChanged { canvas = it },
             ) {
-                MapCanvas(Modifier.fillMaxSize(), dark = settings.appearance.resolvesToDark())
+                val prohibitedLines by viewModel.prohibitedLines.collectAsState()
+                MapCanvas(
+                    Modifier.fillMaxSize(),
+                    dark = settings.appearance.resolvesToDark(),
+                    prohibited = prohibitedLines,
+                )
 
                 // 用 Column 讓選單按鈕自然排在回報列下方。先前用固定位移量去猜
                 // 回報列的高度，結果兩者疊在一起 —— 版面高度該由版面決定，不該手算。
@@ -183,12 +188,13 @@ private fun ScooterApp(viewModel: RideViewModel = viewModel()) {
                         VoiceWarning(state.voiceStatus, viewModel::onVoiceRemedy)
                     }
 
-                    // 懸浮視窗模式下整列隱藏，避免與警示視窗重複資訊。
-                    if (!state.inOverlayMode) {
+                    // 只有騎士真的停下來時才畫回報列 —— 騎乘中連按鈕都不該出現，
+                    // 變灰的按鈕仍然邀請人去按。懸浮視窗模式下一樣隱藏，
+                    // 避免與警示視窗重複資訊。
+                    if (!state.inOverlayMode && state.reportUnlocked) {
                         TopReportBar(
                             entryRoad = state.entryRoad,
                             exitRoad = state.exitRoad,
-                            unlocked = state.reportUnlocked,
                             onReport = viewModel::onReport,
                         )
                     }

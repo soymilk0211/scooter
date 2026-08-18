@@ -11,6 +11,7 @@ import tw.scooter.rules.EnforcementPoint
 import tw.scooter.rules.Grid
 import tw.scooter.rules.IntersectionRule
 import tw.scooter.rules.LatLon
+import tw.scooter.rules.ProhibitedSegment
 import tw.scooter.rules.RuleStatus
 import tw.scooter.rules.TurnRule
 
@@ -134,6 +135,84 @@ class ScooterDatabase private constructor(context: Context) : SQLiteOpenHelper(
             return out
         }
     }
+
+    /**
+     * 取出附近**全面禁行機車**的路段。
+     *
+     * 粗篩走 `prohibited_cells` 這張對照表而不是主表的一個 cell 欄位 ——
+     * 一段路可能有好幾公里、橫跨十幾格，只登記起點那格會讓騎在中段的人查不到，
+     * 而症狀是「這條路有時候會警告、有時候不會」。
+     *
+     * 折線存成 `lat,lon;lat,lon;…`：SQLite 沒有幾何型別，而為了四筆資料
+     * 引進空間擴充不划算。格式壞掉的那一筆整段跳過，不讓一筆爛資料
+     * 把整趟騎乘的禁行判定拖垮。
+     */
+    fun prohibitedNear(lat: Double, lon: Double, radiusMeters: Double): List<ProhibitedSegment> {
+        val cells = Grid.cellsWithin(lat, lon, radiusMeters)
+        if (cells.isEmpty()) return emptyList()
+        val placeholders = cells.joinToString(",") { "?" }
+        val args = cells.map { it.toString() }.toTypedArray()
+
+        readableDatabase.rawQuery(
+            "SELECT s.id, s.road_name, s.bearing, s.polyline, s.speed_limit, s.reason " +
+                "FROM prohibited_segments s JOIN prohibited_cells c ON c.segment_id = s.id " +
+                "WHERE c.cell IN ($placeholders) GROUP BY s.id",
+            args,
+        ).use { c ->
+            val out = ArrayList<ProhibitedSegment>(c.count)
+            while (c.moveToNext()) {
+                val points = parsePolyline(c.getString(3))
+                if (points.size < 2) continue
+                out += ProhibitedSegment(
+                    id = c.getLong(0),
+                    roadName = c.getString(1),
+                    bearing = c.getDouble(2),
+                    polyline = points,
+                    speedLimitKmh = if (c.isNull(4)) null else c.getInt(4),
+                    reason = c.getString(5),
+                )
+            }
+            return out
+        }
+    }
+
+    /**
+     * 全部的禁行路段，供地圖畫線用。
+     *
+     * **刻意不做視野範圍查詢**：目前全國只有 4 筆（臺北市），為了四筆做一套
+     * 隨鏡頭移動重查的機制，複雜度遠大於收益。**其他縣市的資料進來時要改** ——
+     * 那時這個方法會變成「把全國的線都塞進地圖」，症狀是滑動時掉幀。
+     * 屆時改成吃鏡頭範圍的 [prohibitedNear] 即可，畫線那端不必動。
+     */
+    fun allProhibited(): List<ProhibitedSegment> =
+        readableDatabase.rawQuery(
+            "SELECT id, road_name, bearing, polyline, speed_limit, reason FROM prohibited_segments",
+            null,
+        ).use { c ->
+            val out = ArrayList<ProhibitedSegment>(c.count)
+            while (c.moveToNext()) {
+                val points = parsePolyline(c.getString(3))
+                if (points.size < 2) continue
+                out += ProhibitedSegment(
+                    id = c.getLong(0),
+                    roadName = c.getString(1),
+                    bearing = c.getDouble(2),
+                    polyline = points,
+                    speedLimitKmh = if (c.isNull(4)) null else c.getInt(4),
+                    reason = c.getString(5),
+                )
+            }
+            out
+        }
+
+    private fun parsePolyline(raw: String?): List<LatLon> =
+        raw.orEmpty().split(';').mapNotNull { pair ->
+            val parts = pair.split(',')
+            if (parts.size != 2) return@mapNotNull null
+            val lat = parts[0].toDoubleOrNull() ?: return@mapNotNull null
+            val lon = parts[1].toDoubleOrNull() ?: return@mapNotNull null
+            LatLon(lat, lon)
+        }
 
     fun insertObservation(
         lat: Double,

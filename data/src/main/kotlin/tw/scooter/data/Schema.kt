@@ -22,7 +22,7 @@ object Schema {
     const val DATABASE_NAME = "scooter.db"
 
     /** 結構版本。與 meta 表中的 data_version（資料版本）是不同的東西。 */
-    const val SCHEMA_VERSION = 2
+    const val SCHEMA_VERSION = 3
 
     val CREATE: List<String> = listOf(
         """
@@ -120,6 +120,42 @@ object Schema {
         "CREATE INDEX idx_sections_start ON enforcement_sections(start_cell)",
         "CREATE INDEX idx_sections_end ON enforcement_sections(end_cell)",
 
+        // 全面禁行機車的路段。**這是路線層的資料** —— 這條路機車完全不能走，
+        // 與「內側車道禁行機車」是兩回事，後者本專案不收集（ADR-0011）。
+        // 來源是臺北市交通局的開放資料，全市 5 筆，其中 4 筆解得出座標。
+        //
+        // 存折線而不是起訖兩點：堤頂大道沿線比直線長 20%，兩點連線在中段會偏出去
+        // 一百多公尺，而誤報的內容是「你正走在禁行機車的路上」—— 那是最不能
+        // 亂講的一句話。格式是 `lat,lon;lat,lon;…`，因為 SQLite 沒有幾何型別，
+        // 而為了四筆資料引進空間擴充不划算。
+        //
+        // way_ids 是給路線引擎事後驗證用的（ADR-0006 比對的是路網的邊，不是座標）。
+        // 兩種用途、兩種鍵，一起存比日後回頭重算便宜。
+        """
+        CREATE TABLE prohibited_segments (
+            id          INTEGER PRIMARY KEY,
+            road_name   TEXT    NOT NULL,
+            -- 面向。禁行是單向登錄的，忠孝西路兩個方向是兩筆。
+            bearing     REAL    NOT NULL,
+            polyline    TEXT    NOT NULL,
+            way_ids     TEXT,
+            speed_limit INTEGER,
+            reason      TEXT,
+            updated_at  INTEGER NOT NULL
+        )
+        """.trimIndent(),
+
+        // 路段橫跨多個網格（一格約 1.1 公里，環河北路有 4.5 公里），所以不能像
+        // 點位那樣在主表放一個 cell 欄位 —— 那會讓騎在中段的人查不到，
+        // 而症狀是「這條路有時候會警告、有時候不會」，比完全不做更難查。
+        """
+        CREATE TABLE prohibited_cells (
+            cell       INTEGER NOT NULL,
+            segment_id INTEGER NOT NULL
+        )
+        """.trimIndent(),
+        "CREATE INDEX idx_prohibited_cells ON prohibited_cells(cell)",
+
         // 本機待上傳的觀察與回報。上傳後保留一段時間供除錯，再由清理工作刪除。
         """
         CREATE TABLE observations (
@@ -165,6 +201,13 @@ object Schema {
     val MIGRATIONS: Map<Int, List<String>> = mapOf(
         // 1 -> 2：新增區間測速的表。純粹新增，既有資料不動。
         1 to CREATE.filter { it.contains("enforcement_sections") },
+        // 2 -> 3：新增全面禁行機車的路段。同樣是純新增。
+        //
+        // **升級後這兩張表會是空的**，而且不會自己填起來 —— SeedInstaller 只在
+        // 資料庫不存在時安裝種子（為了保護未上傳的回報）。既有裝置要等資料同步
+        // 端點做出來才拿得到這四筆。這不是遺漏，是那條保護的必然代價；
+        // 寫在這裡是因為「表建好了卻查不到東西」看起來像故障。
+        2 to CREATE.filter { it.contains("prohibited_") },
     )
 
     object MetaKey {

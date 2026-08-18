@@ -26,8 +26,29 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.sources.GeoJsonSource
+import tw.scooter.rules.LatLon
 
 private const val TAG = "MapCanvas"
+
+/**
+ * 把折線餵進樣式裡既有的 GeoJSON source。
+ *
+ * 手寫 GeoJSON 字串而不是用 MapLibre 的 `Feature`／`LineString` 型別：
+ * 那些型別來自 `org.maplibre.geojson`，把它們帶進呼叫端會讓
+ * 「一條折線」在專案裡有兩種表示法（`LatLon` 與 `Point`），
+ * 而 core-rules 刻意不依賴任何 Android 或地圖函式庫。轉換擋在這一個地方。
+ *
+ * source 不存在時安靜跳過 —— 換皮的瞬間可能還沒建好，那不是錯誤。
+ */
+private fun Style.setGeoJson(sourceId: String, lines: List<List<LatLon>>) {
+    val source = getSourceAs<GeoJsonSource>(sourceId) ?: return
+    val features = lines.filter { it.size >= 2 }.joinToString(",") { line ->
+        val coords = line.joinToString(",") { "[${it.lon},${it.lat}]" }
+        """{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[$coords]}}"""
+    }
+    source.setGeoJson("""{"type":"FeatureCollection","features":[$features]}""")
+}
 
 /**
  * MapLibre 的 MapView 必須收到完整的 onCreate → onStart → onResume 才會啟動算圖器。
@@ -41,6 +62,10 @@ fun MapCanvas(
     startLat: Double = 25.0330,
     startLon: Double = 121.5654,
     zoom: Double = 15.0,
+    /** 全面禁行機車的路段，畫成紅線。空的就不畫。 */
+    prohibited: List<List<LatLon>> = emptyList(),
+    /** 導航路線。路線引擎還沒上機，目前恆為空。 */
+    route: List<LatLon> = emptyList(),
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -76,11 +101,25 @@ fun MapCanvas(
 
     // 外觀一改就換一次皮。深淺兩版的路網幾何完全相同，所以換皮時地圖不會跳動，
     // 只有顏色淡入 —— 樣式裡的 raster-fade-duration 就是為了這 180 毫秒。
+    var style by remember { mutableStateOf<Style?>(null) }
+
     LaunchedEffect(map, dark) {
         val target = map ?: return@LaunchedEffect
-        target.setStyle(Style.Builder().fromJson(MapStyle.json(dark))) { style ->
-            Log.i(TAG, "style loaded dark=$dark layers=${style.layers.size}")
+        // 換皮會建出一份全新的 Style，舊的 source 不會跟過來 —— 所以這裡把
+        // style 交給下面那個 LaunchedEffect 重新餵一次，而不是在載入回呼裡
+        // 直接塞資料。少了這一步，切換深淺色之後紅線就消失了，
+        // 而那看起來像「這條路不再禁行」。
+        target.setStyle(Style.Builder().fromJson(MapStyle.json(dark))) { ready ->
+            style = ready
+            Log.i(TAG, "style loaded dark=$dark layers=${ready.layers.size}")
         }
+    }
+
+    LaunchedEffect(style, prohibited, route) {
+        val ready = style ?: return@LaunchedEffect
+        ready.setGeoJson(MapStyle.SOURCE_PROHIBITED, prohibited)
+        ready.setGeoJson(MapStyle.SOURCE_ROUTE, listOfNotNull(route.takeIf { it.size >= 2 }))
+        Log.i(TAG, "lines: prohibited=${prohibited.size} route=${route.size}")
     }
 
     DisposableEffect(lifecycleOwner) {
