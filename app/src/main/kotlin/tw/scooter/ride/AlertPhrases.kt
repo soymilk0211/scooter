@@ -24,16 +24,53 @@ object AlertPhrases {
         TurnRule.UNKNOWN -> "前方路口即將左轉，請依現場標誌指示行駛"
     }
 
-    /**
-     * 預先合成的對象。UNKNOWN 也要 —— 資料缺漏時它是最常播的一句。
-     *
-     * **新增一種規定不必動 [VERSION]。** 快取檔名帶 rule id，
-     * 舊的四句沒有改動就仍然有效，新的那句第一次啟動時補合成即可。
-     * VERSION 是給「改了既有文案」用的。
-     */
-    val all: List<TurnRule> = TurnRule.entries.toList()
+    /** 台灣平面道路實際會出現的速限。超出這個集合的退回即時合成。 */
+    val SPEED_LIMITS = listOf(30, 40, 50, 60, 70, 80)
 
-    fun cacheName(rule: TurnRule): String = "alert_v${VERSION}_${rule.id}.wav"
+    /** 一句要預先合成的固定句子。key 同時是快取檔名的一部分。 */
+    data class Phrase(val key: String, val text: String)
+
+    /**
+     * 全部要預先合成的固定句子。
+     *
+     * **收進來的條件是「句子固定」，不是「重要」。** 帶路名的 20 秒主指示進不來
+     * （路名 5,279 個，句子無限），但它有 20 秒可以吸收即時合成的 2.8–3.6 秒延遲。
+     *
+     * **一句話一個檔，永遠不拼接。** 會讓語音走鐘的是拼接 ——「前方」+「300」+
+     * 「公尺」+「左轉」四段各有各的語調，接起來像四個人輪流講話。
+     * 整句合成的語調由引擎自己算，與即時唸出來的完全一樣。
+     *
+     * **新增句子不必動 VERSION**（檔名帶 key，舊句沒改就仍然有效）。
+     * VERSION 是給「改了既有文案」用的 —— 不動它的症狀是「講的跟畫面上寫的不一樣」。
+     */
+    val all: List<Phrase> = buildList {
+        TurnRule.entries.forEach { add(Phrase("rule_" + it.id, of(it))) }
+        // 轉向確認短句。**唯一有硬期限的一則**，五秒吸收不了即時合成的延遲。
+        add(Phrase("confirm_left", "這裡左轉"))
+        add(Phrase("confirm_right", "這裡右轉"))
+        // 測速。速限值有限，所以預合成得了 —— 先前判斷「不值得」是在還沒決定
+        // 全部預合成的時候。順帶解掉一個實際問題：測速走即時、待轉走音檔，
+        // 兩者響度可能差一截，而騎士會以為「有些警示比較小聲」。
+        add(Phrase("cam_none", speedCamera(null, false)))
+        SPEED_LIMITS.forEach { limit ->
+            add(Phrase("cam_" + limit, speedCamera(limit, false)))
+            add(Phrase("cam_" + limit + "_over", speedCamera(limit, true)))
+        }
+    }
+
+    fun keyFor(rule: TurnRule): String = "rule_" + rule.id
+
+    fun keyForConfirm(angleDegrees: Float): String =
+        if (angleDegrees < 0) "confirm_left" else "confirm_right"
+
+    fun keyForCamera(limitKmh: Int?, overSpeed: Boolean): String? = when {
+        limitKmh == null -> if (overSpeed) null else "cam_none"
+        limitKmh !in SPEED_LIMITS -> null
+        overSpeed -> "cam_" + limitKmh + "_over"
+        else -> "cam_" + limitKmh
+    }
+
+    fun cacheName(phrase: Phrase): String = "alert_v${VERSION}_${phrase.key}.wav"
 
     /**
      * 測速照相的播報。**一律講速限** —— 只說「前方測速照相」等於要騎士自己回想

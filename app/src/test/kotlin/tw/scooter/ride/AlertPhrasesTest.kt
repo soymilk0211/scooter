@@ -1,6 +1,7 @@
 package tw.scooter.ride
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,9 +44,26 @@ class AlertPhrasesTest {
     }
 
     @Test
-    fun `pre-synthesised cache names are unique per rule`() {
-        // 撞名會讓兩種規定共用同一個音檔，而騎士會在待轉路口聽到「可直接左轉」。
-        val names = TurnRule.entries.map { AlertPhrases.cacheName(it) }
+    fun `pre-synthesised cache names are unique per phrase`() {
+        // 撞名會讓兩句共用同一個音檔，而騎士會在待轉路口聽到「可直接左轉」。
+        val names = AlertPhrases.all.map { AlertPhrases.cacheName(it) }
         assertEquals(names.size, names.toSet().size)
+    }
+
+    @Test
+    fun `every phrase key that the app looks up actually exists in the cache set`() {
+        // 查一個不存在的 key 不會編譯錯誤，也不會崩潰 —— 它會安靜地退回即時合成，
+        // 而那正是「五秒前那一則遲到三秒」的樣子。
+        val keys = AlertPhrases.all.map { it.key }.toSet()
+        TurnRule.entries.forEach {
+            assertTrue("${'$'}it 的 key 不在預合成集合裡", AlertPhrases.keyFor(it) in keys)
+        }
+        assertTrue(AlertPhrases.keyForConfirm(-90f) in keys)
+        assertTrue(AlertPhrases.keyForConfirm(90f) in keys)
+        AlertPhrases.SPEED_LIMITS.forEach { limit ->
+            assertTrue(AlertPhrases.keyForCamera(limit, false)!! in keys)
+            assertTrue(AlertPhrases.keyForCamera(limit, true)!! in keys)
+        }
+        assertNull("罕見速限沒有預合成，退回即時合成", AlertPhrases.keyForCamera(37, false))
     }
 }

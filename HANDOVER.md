@@ -41,7 +41,7 @@
 ## 現在做到哪裡（先讀這段）
 
 **程式上：規則引擎、語音、測速、地圖、設定都在，導航與回報那一整塊都還沒開始。**
-79 項單元測試全綠（core-rules 53、app 26），`./gradlew build` 通過，APK 53 MB。
+92 項單元測試全綠（core-rules 65、app 27），`./gradlew build` 通過，APK 53 MB。
 
 **這一輪的文件已經改寫完**（本文件、CONTEXT.md、README.md、五份新 ADR），
 **四個既有缺陷也修掉了**（見下）。導航、後端、審核那幾大塊還沒開始。
@@ -63,7 +63,7 @@
 | **查清楚車道級到底怎麼做** | 官方有規則與清單，不必量也不必問。見第一節 1b。連帶訂正 ADR-0009 的一個用字 |
 | **`import_prohibited.py` + `geocode_prohibited.py`** | 臺北市平面道路全面禁行機車 5 筆：解析、地理編碼、裁出折線與 way 編號，**4/5 可用**。剩下一筆的起點是「匝道入口處」不是路名。**尚未進種子庫**（見 1b） |
 
-**79 項單元測試全綠**（core-rules 53、app 26），`./gradlew build` 通過。
+**92 項單元測試全綠**（core-rules 65、app 27），`./gradlew build` 通過。
 `TrackBufferTest` 從 5 條加到 11 條，其中「停等 90 秒後仍取得進入方位角」
 是這一輪的核心案例；`RuleMatcherTest` 加了三條守時窗的。
 
@@ -673,7 +673,7 @@ adb push mouse.json /data/local/tmp/ && adb shell 'uinput - < /data/local/tmp/mo
 - **固定測速警示 + 可拖曳時速圓圈**
 - 種子資料庫內附於 APK，首次啟動複製到可寫位置
 
-**79 項單元測試全綠**（core-rules 53、app 26），`./gradlew build` 通過，APK 53 MB。
+**92 項單元測試全綠**（core-rules 65、app 27），`./gradlew build` 通過，APK 53 MB。
 
 ### 這些現成的東西，在新範圍下要改什麼
 

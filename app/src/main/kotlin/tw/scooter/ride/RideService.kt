@@ -111,7 +111,15 @@ class RideService : Service() {
                         hint.maneuver.angleDegrees,
                         hint.distanceBucketMeters,
                         roadName,
-                    )?.let(voice::speakManeuver)
+                    )?.let { phrase ->
+                        // 五秒那則有預合成的檔案可以放；二十秒那則帶路名，只能即時。
+                        val key = if (hint.distanceBucketMeters == null) {
+                            AlertPhrases.keyForConfirm(hint.maneuver.angleDegrees)
+                        } else {
+                            null
+                        }
+                        voice.speakManeuver(phrase, key)
+                    }
                 }
             }
         }

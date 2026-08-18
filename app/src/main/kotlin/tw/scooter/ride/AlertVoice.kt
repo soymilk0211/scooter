@@ -34,7 +34,7 @@ class AlertVoice(private val context: Context) {
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val cacheDir = File(context.cacheDir, "voice").apply { mkdirs() }
-    private val cached = ConcurrentHashMap<TurnRule, File>()
+    private val cached = ConcurrentHashMap<String, File>()
 
     private var tts: TextToSpeech? = null
     private var player: MediaPlayer? = null
@@ -64,7 +64,7 @@ class AlertVoice(private val context: Context) {
     private val pendingSynthesis = AtomicInteger(0)
     private val synthesisFailed = AtomicBoolean(false)
     private val resolvedUtterances = ConcurrentHashMap.newKeySet<String>()
-    private val queuedRules = ConcurrentHashMap<String, TurnRule>()
+    private val queuedPhrases = ConcurrentHashMap<String, AlertPhrases.Phrase>()
 
     /**
      * 每次 [prepare] 遞增。所有回呼都帶著自己那一輪的號碼，對不上就丟掉。
@@ -94,7 +94,7 @@ class AlertVoice(private val context: Context) {
         engineStatus = VoiceStatus.CHECKING
         engineUsable = false
         resolvedUtterances.clear()
-        queuedRules.clear()
+        queuedPhrases.clear()
         synthesisFailed.set(false)
         pendingSynthesis.set(0)
         val round = generation.incrementAndGet()
@@ -139,10 +139,10 @@ class AlertVoice(private val context: Context) {
      * 才算有結論；在那之前狀態停在 [VoiceStatus.CHECKING]，畫面不出現任何警告。
      */
     private fun synthesiseAll(engine: TextToSpeech, round: Int) {
-        val missing = AlertPhrases.all.filter { rule ->
-            val file = File(cacheDir, AlertPhrases.cacheName(rule))
+        val missing = AlertPhrases.all.filter { phrase ->
+            val file = File(cacheDir, AlertPhrases.cacheName(phrase))
             val usable = file.exists() && file.length() > 0
-            if (usable) cached[rule] = file
+            if (usable) cached[phrase.key] = file
             !usable
         }
 
@@ -162,11 +162,11 @@ class AlertVoice(private val context: Context) {
         // 等於這整套警告機制自己也靜默失效了。
         watchdog.postDelayed(synthesisTimeout, SYNTHESIS_TIMEOUT_MS)
 
-        missing.forEach { rule ->
-            val id = utteranceId(rule)
-            queuedRules[id] = rule
-            val file = File(cacheDir, AlertPhrases.cacheName(rule))
-            val code = engine.synthesizeToFile(AlertPhrases.of(rule), null, file, id)
+        missing.forEach { phrase ->
+            val id = utteranceId(phrase)
+            queuedPhrases[id] = phrase
+            val file = File(cacheDir, AlertPhrases.cacheName(phrase))
+            val code = engine.synthesizeToFile(phrase.text, null, file, id)
             if (code != TextToSpeech.SUCCESS) resolveUtterance(id, ok = false, round = round)
         }
     }
@@ -177,10 +177,10 @@ class AlertVoice(private val context: Context) {
         val id = utteranceId ?: return
         if (!resolvedUtterances.add(id)) return
 
-        val rule = queuedRules[id]
-        val file = rule?.let { File(cacheDir, AlertPhrases.cacheName(it)) }
-        if (ok && rule != null && file != null && file.exists() && file.length() > 0) {
-            cached[rule] = file
+        val phrase = queuedPhrases[id]
+        val file = phrase?.let { File(cacheDir, AlertPhrases.cacheName(it)) }
+        if (ok && phrase != null && file != null && file.exists() && file.length() > 0) {
+            cached[phrase.key] = file
         } else {
             Log.w(TAG, "合成失敗：$id")
             synthesisFailed.set(true)
@@ -245,9 +245,19 @@ class AlertVoice(private val context: Context) {
             return
         }
         requestFocus()
-        val file = cached[rule]?.takeIf { it.exists() && it.length() > 0 }
-        if (file != null) play(file) else tts?.speak(
-            AlertPhrases.of(rule), TextToSpeech.QUEUE_FLUSH, null, "alert_live_${rule.id}")
+        speakFixed(AlertPhrases.keyFor(rule), AlertPhrases.of(rule))
+    }
+
+    /**
+     * 播一句固定句：有預合成的音檔就放檔案，沒有就退回即時合成。
+     *
+     * 退路必須留著 —— 合成可能失敗（DEGRADED），而那時候「慢三秒」
+     * 遠好過「不出聲」。
+     */
+    private fun speakFixed(key: String, fallbackText: String) {
+        val file = cached[key]?.takeIf { it.exists() && it.length() > 0 }
+        if (file != null) play(file)
+        else tts?.speak(fallbackText, TextToSpeech.QUEUE_FLUSH, null, "alert_live_" + key)
     }
 
     /**
@@ -305,14 +315,18 @@ class AlertVoice(private val context: Context) {
      * `QUEUE_FLUSH` 而不是 `QUEUE_ADD`：轉向指示過期得很快，
      * 上一則還沒講完就代表它已經不重要了。
      */
-    fun speakManeuver(phrase: String) {
+    fun speakManeuver(phrase: String, cacheKey: String? = null) {
         publish()
         if (!engineUsable) {
             Log.w(TAG, "語音不可用，略過轉向播報：$engineStatus")
             return
         }
         requestFocus()
-        tts?.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "maneuver_${System.nanoTime()}")
+        // 五秒那則是固定句，有預合成的檔案 —— 而它是唯一有硬期限的一則。
+        // 二十秒那則帶路名、句子無限，只能即時合成，但它有二十秒可以吸收延遲。
+        val file = cacheKey?.let { cached[it] }?.takeIf { it.exists() && it.length() > 0 }
+        if (file != null) play(file)
+        else tts?.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "maneuver_${System.nanoTime()}")
     }
 
     private fun play(file: File) {
@@ -365,7 +379,8 @@ class AlertVoice(private val context: Context) {
         onStatus = {}
     }
 
-    private fun utteranceId(rule: TurnRule) = "alert_v${AlertPhrases.VERSION}_${rule.id}"
+    private fun utteranceId(phrase: AlertPhrases.Phrase) =
+        "alert_v${AlertPhrases.VERSION}_${phrase.key}"
 
     private companion object {
         const val TAG = "AlertVoice"
