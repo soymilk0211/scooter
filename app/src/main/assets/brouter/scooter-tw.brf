@@ -58,6 +58,20 @@ assign consider_river      = false  # %consider_river% | Activate to prefer a ro
 assign consider_forest     = false  # %consider_forest% | Activate to prefer a route in forest or parks | boolean
 assign consider_town       = false  # %consider_town% | Activate to bypass cities / big towns as far as possible | boolean
 
+#
+# 待轉的轉向成本（ADR-0012：待轉是成本不是禁止）。單位是 BRouter 的等效公尺。
+#
+# ⚠ **這個參數目前不生效，而且不是設錯，是這份 profile 的成本模型不支援。**
+# 下面第 38 行的 ---model:btools.router.KinematicModel 讓 BRouter 走 KinematicPath，
+# 而 KinematicPath **整支沒有呼叫過 getTurncost()**（StdPath 才有，實測 javap
+# 計數 0 對 1）。實測佐證：把 turncost 設成 2000 跑台北到台中，76 個轉彎，
+# 成本一個位數都沒有變。
+#
+# 留著它不是忘了刪 —— 圖磚裡的 scooter:hook_turn 標籤是真的（ADR-0017 的注入
+# 管線會寫進去，實測用 costfactor 擋那條 link 路線確實改變），缺的只有成本模型。
+# 換掉成本模型那天，這一行立刻生效，不必重建圖磚。
+assign hook_turn_cost      = 300    # %hook_turn_cost% | 待轉的轉向成本（等效公尺） | number
+
 # Kinematic model parameters
 assign vmax = 160 # %vmax% | Target speed (in km/h) | number
 assign recup_efficiency = 0.7    # %recup_efficiency% | (ratio) | number
@@ -288,6 +302,17 @@ assign costfactor =
 
 assign minspeed =
     switch highway=motorway|motorway_link|trunk  75 0
+
+#
+# 轉向成本。StdPath 會把它乘上 (1 - cos 轉角) 再加進成本，所以直行是零、
+# 九十度是一倍、迴轉是兩倍。**它是 way 層的變數**（進入那條 link 時求值），
+# 不是「從哪來、往哪去」的函數 —— 這正是待轉只能標在離開臂上的原因，
+# 也是它的精度上限：對向來車的右轉會吃到同一筆成本。
+#
+# **KinematicPath 不讀這個變數**，所以在目前的成本模型下這一行是空的，
+# 見上面 hook_turn_cost 的說明。一般轉彎維持零：臺北路口密，每個轉彎都收費
+# 會讓路線偏好長直線而繞遠。
+assign turncost = if scooter:hook_turn=yes then hook_turn_cost else 0
 
 # way priorities used for voice hint generation
 

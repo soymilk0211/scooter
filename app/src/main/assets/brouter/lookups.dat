@@ -823,6 +823,8 @@ construction;0000442502 steps
 construction;0000360177 road highway
 construction;0000000049 bridleway
 
+scooter:hook_turn;0000000001 yes
+
 
 ---context:node
 

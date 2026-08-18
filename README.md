@@ -99,14 +99,22 @@ SQLite 結構與種子資料庫（臺北 118 條規則、1,523 個固定測速�
 跟隨器算進度 → 20 秒／5 秒兩段播報），但**整條鏈只有編譯與單元測試，
 沒有在任何裝置上跑過**。
 
-**尚未開始**：後端與上傳、審核與發布閘門、告知畫面、被動觀察、
-自建圖磚（[ADR-0017](docs/adr/0017-build-our-own-routing-tiles.md)）。
+**尚未開始**：後端與上傳、審核與發布閘門、告知畫面、被動觀察。
+
+**圖磚是我們自己建的**（[ADR-0017](docs/adr/0017-build-our-own-routing-tiles.md)，
+管線在 [`pipeline/tiles/`](pipeline/tiles/README.md)）：用路人回報的禁止左轉會在
+建圖時烘成真正的轉向限制，所以**回報改變得了路線**，不只是多播一句話。
+實測注入一筆之後，台北車站到市府從 6,398 公尺變成 6,627 公尺，
+其餘三組起訖一個位元都沒變。待轉成本的圖磚那半也做完了，但它卡在 profile 的
+成本模型（決策檔案 D10），目前不生效。
 
 **路線引擎選了 BRouter**（[ADR-0016](docs/adr/0016-brouter-instead-of-valhalla-on-device.md)）。
 ADR-0003 押的「Valhalla 官方 Android 離線函式庫」不存在 —— 沒有 AAR、
 沒有 NDK build target、沒有 Android binding。BRouter 是純 Java，
-台灣圖資約 33 MB（Valhalla 是 309 MB），圖磚每週重建，
-而 `turncost` 正好能表達待轉成本。
+台灣圖資約 20 MB 自建（官方 33 MB、Valhalla 309 MB）。
+
+（`turncost` 原本被當成待轉成本的解法，後來查出 car 系 profile 走的
+`KinematicPath` 根本不讀它 —— 見決策檔案 D10。）
 
 嵌入已驗證：346 KB 的 `-ro.jar`、零個 android 參照，不裝 BRouter App
 就算得出台北車站到市府的 5,714 公尺路線，279 毫秒、6 則轉向指示。

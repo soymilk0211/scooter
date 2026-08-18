@@ -24,6 +24,11 @@ cp build/scooter_seed.db ../app/src/main/assets/
 
 只需要標準函式庫，無外部相依。Overpass 回應快取在 `build/cache/`，重跑不會重打 API。
 
+**另有一條分支：[`tiles/`](tiles/) 建路網圖磚**，把回報的禁止左轉烘進 BRouter 的
+rd5（[ADR-0017](../docs/adr/0017-build-our-own-routing-tiles.md)）。它與上面那條
+共用種子庫但產出完全不同的東西 —— 上面產的是 App 查規則用的 SQLite，
+`tiles/` 產的是路線引擎吃的圖磚。前者當天可以更新，後者一季重建一次。
+
 ## 各階段做了什麼
 
 **taipei_parse.py** — 把三份 Big5 編碼的 CSV 正規化。核心是「方向」欄的解讀：
