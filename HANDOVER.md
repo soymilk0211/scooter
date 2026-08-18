@@ -872,7 +872,7 @@ cp build/scooter_seed.db ../app/src/main/assets/
 
 ---
 
-## 六、路線引擎：Valhalla 的 Android 那一層不存在
+## 六、路線引擎：選定 BRouter，Valhalla 的 Android 那一層不存在
 
 **2026-08-18 去確認 ADR-0003 的前提，結果是它站不住。**
 
@@ -900,21 +900,66 @@ GraphHopper 官方在放棄 Android 離線支援時，指向的就是 BRouter。
 **33 MB 對 309 MB 不只是省流量**：ADR-0008 那一整套分縣市離線包與首次啟動
 下載流程，是為了 309 MB 而設計的；33 MB 是「隨 APK 出貨」的量級。
 
-### 下一步是一個 spike，不是開始整合
+### Spike 已經跑過了，通過（2026-08-18）
 
-**BRouter 常見的用法是「service interface」** —— 一個獨立安裝的 App 在背景
-提供路徑，別的地圖工具呼叫它。**那對我們不成立**：不能要求騎士先裝第二個 App。
-核心是 Java、MIT、模組化（`brouter-core` / `brouter-mapaccess` /
-`brouter-expressions`），理論上直接編進來就好，**但沒有文件說明這個用法，
-也沒有 Maven artifact**。
+**不裝 BRouter App、不走它的 service interface，用一般的 `java -cp` 就算得出路線。**
 
-所以第 5 項的第一件事是：**把 `brouter-core` 抽出來，在一個空專案裡餵它一份
-`E120_N25.rd5`，看能不能在不裝 BRouter App 的情況下算出一條台北市內的路線。**
-過了才談 profile 與逐向指示；沒過再回頭比較兩條不確定的路，
-而那時至少後者是 Java，失敗看得懂為什麼。
+`brouter-1.7.10-ro.jar` 是 **346 KB、128 個 class、零個 android 參照**的純 Java
+路由核心（release zip 裡另有一個 2.3 MB 的 `-all.jar`，那個是含建圖工具的）。
+餵它一份 `E120_N25.rd5`，台北車站 → 市府：**5,714 公尺、279 毫秒、157 節點、
+6 則轉向指示**。台北 → 台中（moped profile）：156.6 公里、1.8 秒、58 則指示。
 
-另外兩件還沒確認的：白牌機車的 profile 要自己寫（moped profile 是歐洲的，
-這是工作量不是風險），以及 BRouter 的 voicehints 夠不夠當逐向指示用。
+重跑的方法（整個 spike 不到 70 行）：
+
+```java
+RoutingContext rc = new RoutingContext();
+rc.localFunction = "…/profiles2/moped.brf";  // lookups.dat 要放得到
+rc.turnInstructionMode = 1;
+RoutingEngine engine = new RoutingEngine(null, null, new File("segments4"), waypoints, rc);
+engine.doRun(0);
+OsmTrack track = engine.getFoundTrack();   // track.distance / track.nodes / getVoiceHint(i)
+```
+
+座標是整數微度加偏移：`ilon = (int)((lon + 180) * 1e6 + 0.5)`、
+`ilat = (int)((lat + 90) * 1e6 + 0.5)`。圖磚放在 `segments4/`，
+從 `https://brouter.de/brouter/segments4/<名稱>.rd5` 下載。
+
+### Spike 查出來的三件事，第一件是唯一真正的整合成本
+
+**一、轉向指示的欄位是 package-private。** `VoiceHint` 的 `cmd`、`angle`、
+`distanceToNext` 都不公開，公開的只有 `getTime()`、`getExitNumber()`、
+`formatGeometry()`、`hasGiveWay()`。官方預期你走 GPX／GeoJSON 序列化那條路。
+我們要逐向指示，所以得選一個：**把 adapter 放進 `btools.router` 套件**
+（Java 的老招，能用但難看）、序列化再解析回來（更難看）、或者 fork。
+**建議走第一個**，並且把那個檔案獨立放好、註明理由，否則下一個人會以為
+放錯地方了。
+
+**二、內建的 `moped.brf` 不禁止走高速公路。** 成本表裡是
+`if (highway=motorway) then 30` —— 那是「貴」不是「不能走」。
+實測台北到台中，moped 156.6 公里、car-fast 166.9 公里，**兩者分不出誰上了國道**，
+所以這個測試本身不決定性，而結論是**不能沿用內建 profile**。
+白牌 profile 要自己寫，`car-fast.brf` 裡的 `assign avoid_motorways` 布林參數
+就是可以照抄的寫法。這是工作量不是風險。
+
+**三、`turncost` 與節點的 `initialcost` 都在 profile 裡。**
+`moped.brf` 第一行就是 `assign turncost = if junction=roundabout then 0 …`，
+節點區段另有一個 `initialcost`。**這正是 ADR-0012 要的** ——
+待轉要表達成「這個轉彎多花一個號誌週期」，在 BRouter 上是改設定不是改引擎。
+
+### 還沒解決的
+
+**`-ro.jar` 沒有 Maven 座標**，只在 GitHub release 的 zip 裡。所以要嘛放進
+`app/libs/`（升級變手動作業），要嘛從原始碼建。哪一種都要在 build 檔裡寫死版本，
+否則哪天沒人知道那個 jar 是哪來的。
+
+**圖磚要出貨或下載。** 台灣兩塊共約 33 MB（`E120_N20.rd5` 21.0 +
+`E120_N25.rd5` 11.9）。33 MB 可以直接塞進 APK，也可以首次啟動抓 ——
+但它們是**每週重建**的，所以塞進 APK 等於資料更新綁在 App 更新上，
+而我們是自己發 APK（ADR-0015）沒有自動更新。**建議首次啟動下載**，
+與規則同步走不同通道。
+
+**BRouter 的 voicehints 夠不夠當逐向指示用**，仍然沒有驗證 —— 數量對得上
+（台北到台中 58 則），但內容品質要接出來看過才知道，而那卡在上面第一件事。
 
 ---
 
@@ -1011,7 +1056,7 @@ APK 之前**，沒有中途出貨的縮減版。
 | **2** | **後端與上傳** | 匿名裝置 ID、批次上傳、`observations` 加片段欄位。免費層起步（ADR-0013）。**覆蓋率儀表板一起做** —— 沒有它就沒有東西決定何時封測 |
 | **3** | **審核、正確率與發布閘門** | 前 5 筆進佇列；官方 118 條自動評分；Wilson 下界；審核結果回頭改分數。**閘門這一段不能延後** —— 下行通道一開，未審核的資料就會播進別人耳朵裡 |
 | **4** | **告知畫面與隱私權政策** | 首次啟動的告知、關閉與刪除。**不需要背景位置權限**（ADR-0014）。政策要自己找地方放 |
-| **5** | **路線引擎** | **先做 BRouter 的嵌入 spike**（ADR-0016），不要直接開始 Valhalla 的 NDK 工作。轉向限制關聯、白牌 profile、禁行路段事後驗證 |
+| **5** | **路線引擎** | **BRouter**（ADR-0016，嵌入 spike 已通過）。要做的是：`-ro.jar` 進 build、圖磚下載、**自己寫白牌 profile**（內建 moped 不禁國道）、轉向指示的 adapter（欄位是 package-private）、禁行路段事後驗證 |
 | **6** | **轉向指示與 20 秒時窗** | 剛性窗改時間；待轉提示 30 秒；動態 TTS 與預合成兩條路共存。**測速的 500–320 m 窗會與新的剛性窗重疊，要一起重算** |
 | **7** | **待轉成本接進路線** | ADR-0012。**不要編成 `no_left_turn`** |
 | **8** | **地址搜尋與偏航重算** | ADR-0007 的 Consequences 那幾項 |

@@ -97,11 +97,14 @@ SQLite 結構與種子資料庫（臺北 118 條規則、1,523 個固定測速�
 **尚未開始**：導航（路線、轉向指示、地址搜尋）、停止時的回報介面、
 後端與上傳、審核與發布閘門、告知畫面、被動觀察。
 
-**路線引擎還沒選定。** ADR-0003 押的是「Valhalla 的官方 Android 離線函式庫」，
-而那個東西**不存在**（沒有 AAR、沒有 NDK build target、沒有 Android binding）。
-替代方案是 BRouter：純 Java、台灣圖資約 33 MB（Valhalla 是 309 MB）、
-圖磚每週重建、`turncost` 正好能表達待轉成本。要先驗證它能不能當函式庫嵌入 ——
-見 [ADR-0016](docs/adr/0016-brouter-instead-of-valhalla-on-device.md)。
+**路線引擎選了 BRouter**（[ADR-0016](docs/adr/0016-brouter-instead-of-valhalla-on-device.md)）。
+ADR-0003 押的「Valhalla 官方 Android 離線函式庫」不存在 —— 沒有 AAR、
+沒有 NDK build target、沒有 Android binding。BRouter 是純 Java，
+台灣圖資約 33 MB（Valhalla 是 309 MB），圖磚每週重建，
+而 `turncost` 正好能表達待轉成本。
+
+嵌入已驗證：346 KB 的 `-ro.jar`、零個 android 參照，不裝 BRouter App
+就算得出台北車站到市府的 5,714 公尺路線，279 毫秒、6 則轉向指示。
 
 **已驗證的假設**：台灣 Valhalla 圖磚 309 MB、`motor_scooter` costing 確實避開國道
 （[ADR-0003](docs/adr/0003-on-device-valhalla-routing.md)、
