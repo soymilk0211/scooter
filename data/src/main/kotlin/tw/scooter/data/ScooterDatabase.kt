@@ -16,6 +16,7 @@ import tw.scooter.rules.IntersectionRule
 import tw.scooter.rules.LatLon
 import tw.scooter.rules.ProhibitedSegment
 import tw.scooter.rules.RuleStatus
+import tw.scooter.rules.SelfReports
 import tw.scooter.rules.TurnRule
 
 class ScooterDatabase private constructor(context: Context) : SQLiteOpenHelper(
@@ -286,7 +287,63 @@ class ScooterDatabase private constructor(context: Context) : SQLiteOpenHelper(
         put("kind", kind)
         disputedRuleId?.let { put("disputed_rule_id", it) }
         put("observed_at", observedAt)
+        // 網格存的是**回報當下的位置**（也就是停止線），不是換算後的路口中心。
+        // 這樣存是因為 cell 只是粗篩，而退距十幾公尺遠小於一格（約 1.1 公里）；
+        // 換算留給 core-rules 的 SelfReports，那裡有測試看著。
+        put("cell", Grid.cellOf(lat, lon))
     })
+
+    /**
+     * 取出這台裝置自己回報過、且尚未經過發布閘門的規則。
+     *
+     * **為什麼自己的回報要立刻生效**：發布閘門管的是「回報 → 別人的裝置」，
+     * 不是「回報 → 自己的裝置」（CONTEXT.md）。騎士剛剛看著那面牌子按下按鈕，
+     * 對那個路口而言他手上就是最好的資訊。理由的完整版在 [SelfReports]。
+     *
+     * 同一個路口同一個來向按了兩次以上時**只取最新的一筆** —— 第二次按通常是在
+     * 更正第一次，而不是在投第二票（本機沒有共識這回事，共識是後端的工作）。
+     * SQL 這裡先粗篩到網格，「同一個路口同一個來向」的判定交給 [SelfReports]。
+     *
+     * 回傳的 id 是負數，與 rules 表的正數 id 不會相撞 —— RuleMatcher 拿 id 當
+     * 冷卻鍵，撞到會讓一筆回報把另一條規則的警示吃掉。
+     */
+    fun selfReportsNear(lat: Double, lon: Double, radiusMeters: Double): List<IntersectionRule> {
+        val cells = Grid.cellsWithin(lat, lon, radiusMeters)
+        if (cells.isEmpty()) return emptyList()
+        val placeholders = cells.joinToString(",") { "?" }
+        val args = cells.map { it.toString() }.toTypedArray() +
+            arrayOf(Schema.ObservationKind.REPORT.toString())
+
+        readableDatabase.rawQuery(
+            "SELECT id, lat, lon, approach_bearing, exit_bearing, observed_rule " +
+                "FROM observations WHERE cell IN ($placeholders) AND kind = ? " +
+                "ORDER BY observed_at DESC",
+            args,
+        ).use { c ->
+            val out = ArrayList<IntersectionRule>(c.count)
+            while (c.moveToNext()) {
+                val reportedAt = LatLon(c.getDouble(1), c.getDouble(2))
+                val approach = c.getDouble(3)
+                val candidate = IntersectionRule(
+                    id = -c.getLong(0),
+                    // 回報位置是停止線，規則的座標是路口中心，差一個退距。
+                    location = SelfReports.junctionCentre(reportedAt, approach),
+                    approachBearing = approach,
+                    exitBearing = if (c.isNull(4)) null else c.getDouble(4),
+                    rule = TurnRule.fromId(c.getInt(5)),
+                    status = RuleStatus.SELF_REPORTED,
+                    confidence = 100,
+                    entryRoadName = null,
+                    exitRoadName = null,
+                    effectivePeriod = null,
+                )
+                // 已經有更新的一筆蓋住同一個路口同一個來向就跳過（查詢是新的在前）。
+                if (SelfReports.isSupersededBy(candidate, out)) continue
+                out += candidate
+            }
+            return out
+        }
+    }
 
     fun dataVersion(): Long =
         readableDatabase.rawQuery(

@@ -22,7 +22,7 @@ object Schema {
     const val DATABASE_NAME = "scooter.db"
 
     /** 結構版本。與 meta 表中的 data_version（資料版本）是不同的東西。 */
-    const val SCHEMA_VERSION = 4
+    const val SCHEMA_VERSION = 5
 
     val CREATE: List<String> = listOf(
         """
@@ -199,9 +199,14 @@ object Schema {
             kind             INTEGER NOT NULL,
             disputed_rule_id INTEGER,
             observed_at      INTEGER NOT NULL,
-            uploaded_at      INTEGER
+            uploaded_at      INTEGER,
+            -- 自己的回報要立刻影響自己裝置的播報（RuleStatus.SELF_REPORTED），
+            -- 所以這張表也要查得動 —— 沒有 cell 的話每次查都要全表掃描，
+            -- 而它是每秒查一次的路徑。
+            cell             INTEGER
         )
         """.trimIndent(),
+        "CREATE INDEX idx_observations_cell ON observations(cell)",
         "CREATE INDEX idx_observations_pending ON observations(uploaded_at)",
     )
 
@@ -242,6 +247,16 @@ object Schema {
         // 3 -> 4：新增路名索引。同樣純新增，而且同樣**升級後會是空的** ——
         // SeedInstaller 只在資料庫不存在時安裝種子。既有裝置要等資料同步端點。
         3 to CREATE.filter { it.contains("road_names") || it.contains("road_segments") },
+        // 4 -> 5：observations 加上網格欄位，讓自己的回報也查得動。
+        //
+        // **既有的回報 cell 會是 NULL**，於是查不到、也就不會生效。那是刻意的：
+        // 硬要在升級時回填，等於在遷移裡重算一次網格函式，而 cell_of 的定義由
+        // GridParityTest 把關、不該有第二份實作。升級前的回報本來也還沒有上傳
+        // 通道，補回來沒有意義。
+        4 to listOf(
+            "ALTER TABLE observations ADD COLUMN cell INTEGER",
+            "CREATE INDEX idx_observations_cell ON observations(cell)",
+        ),
     )
 
     object MetaKey {

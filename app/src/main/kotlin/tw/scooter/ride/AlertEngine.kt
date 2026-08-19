@@ -11,6 +11,7 @@ import tw.scooter.rules.ProhibitedMatcher
 import tw.scooter.rules.ProhibitedThresholds
 import tw.scooter.rules.RiderState
 import tw.scooter.rules.RuleMatcher
+import tw.scooter.rules.SelfReports
 
 /**
  * 一次定位更新的判定結果。
@@ -70,11 +71,21 @@ class AlertEngine(
 
         // 路口規則只在騎乘中查。靜止時不存在「接近路口」這件事，
         // 省下的是每秒一次的網格查詢。
-        val turn = if (!riding) null else database
-            .rulesNear(
-                lat = state.location.lat,
-                lon = state.location.lon,
-                radiusMeters = AlertThresholds.MAX_DISTANCE_METERS,
+        val turn = if (!riding) null else SelfReports
+            .merge(
+                published = database.rulesNear(
+                    lat = state.location.lat,
+                    lon = state.location.lon,
+                    radiusMeters = AlertThresholds.MAX_DISTANCE_METERS,
+                ),
+                // 自己按過的回報立刻生效，不等發布閘門 —— 那道閘門管的是
+                // 「回報 → 別人的裝置」，不是「回報 → 自己的裝置」。理由的
+                // 完整版在 SelfReports，那裡也有測試。
+                own = database.selfReportsNear(
+                    lat = state.location.lat,
+                    lon = state.location.lon,
+                    radiusMeters = AlertThresholds.MAX_DISTANCE_METERS,
+                ),
             )
             .takeIf { it.isNotEmpty() }
             ?.let { matcher.select(state, it) }
